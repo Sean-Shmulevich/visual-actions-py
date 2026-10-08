@@ -112,7 +112,11 @@ def test_sequence_monotonic_with_pinch_segment():
     frames = S.generate_sequence("pinch_drag", 3.0, rng=random.Random(5))
     ts = [f.t_ns for f in frames]
     assert ts == sorted(ts) and len(set(ts)) == len(ts)
-    assert len(frames) == 90
+    # hold (>= 1.5 s) + form + drag (>= 1 s) + release: at least ~2.9 s of frames
+    assert 85 <= len(frames) <= 200
+    # the leader phase is a still open palm: the wrist barely moves for the first 40 frames
+    xs = [f.landmarks[0].x for f in frames[:40]]
+    assert max(xs) - min(xs) < 0.02
     d = []
     for hf in frames:
         c = canonical(to_user_frame(hf, True))
