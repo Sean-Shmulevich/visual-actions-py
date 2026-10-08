@@ -43,6 +43,14 @@ class VisualActionsApp(rumps.App):
             t = cfg.timing.to_timing()
             Overlay(self.bus, t.leader_hold_ns, t.command_timeout_ns, cfg.timing.popup_ms)
 
+        self.dashboard = None
+        if cfg.feedback.dashboard:
+            from .dashboard import Dashboard
+
+            try:
+                self.dashboard = Dashboard(self.bus, cfg, stats=self._capture_stats, port=cfg.feedback.dashboard_port)
+            except OSError as exc:  # port busy: run without it
+                print(f"dashboard disabled: {exc}")
         self.status_item = rumps.MenuItem("Status: starting")
         self.perm_item = rumps.MenuItem("Permissions…", callback=self.show_permissions)
         self.toggle_item = rumps.MenuItem("Stop", callback=self.toggle)
@@ -55,6 +63,7 @@ class VisualActionsApp(rumps.App):
             self.toggle_item,
             self.dry_item,
             rumps.MenuItem("Open config file", callback=lambda _: subprocess.run(["open", "-t", str(config_path())], check=False)),
+            rumps.MenuItem("Open dashboard", callback=self.open_dashboard),
             None,
             rumps.MenuItem("Quit", callback=self.quit),
         ]
@@ -114,6 +123,18 @@ class VisualActionsApp(rumps.App):
                 if isinstance(owner, Pipeline):
                     owner.dispatcher.automation = self.services.automation
         self._set_status("dry run " + ("on" if self.dry_run else "off"))
+
+    def open_dashboard(self, _item) -> None:
+        if self.dashboard is None:
+            rumps.alert("Dashboard", "The dashboard is disabled in config or its port was busy.")
+            return
+        subprocess.run(["open", self.dashboard.url], check=False)
+
+    def _capture_stats(self) -> dict:
+        c = self.capture
+        if c is None:
+            return {"frames": 0, "tracked": 0, "error": "capture not running"}
+        return {"frames": c.frames, "tracked": c.tracked, "error": c.error}
 
     def show_permissions(self, _item) -> None:
         s = self.services.permissions.check(prompt=True)

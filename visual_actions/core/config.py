@@ -40,6 +40,8 @@ class FeedbackConfig:
     audio: bool = True
     popup: bool = True
     cursor: bool = True  # small on-screen marker where a pinch lands / where the drag is
+    dashboard: bool = True  # local live status page
+    dashboard_port: int = 8765
 
 
 @dataclass

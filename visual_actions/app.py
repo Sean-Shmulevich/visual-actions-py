@@ -31,6 +31,14 @@ def run_live(cfg: Config, dry_run: bool, use_gate: bool = True, verbose: bool = 
 
     q: queue.Queue = queue.Queue(maxsize=64)
     capture = CaptureThread(services.camera, q, use_gate=use_gate)
+    if cfg.feedback.dashboard:
+        from .ui.dashboard import Dashboard
+
+        try:
+            dash = Dashboard(bus, cfg, stats=lambda: {"frames": capture.frames, "tracked": capture.tracked, "error": capture.error}, port=cfg.feedback.dashboard_port)
+            print(f"dashboard: {dash.url}")
+        except OSError as exc:
+            print(f"dashboard disabled: {exc}")
     capture.start()
     tick_s = cfg.timing.tick_ms / 1000
     print("running; ctrl-c to stop")
