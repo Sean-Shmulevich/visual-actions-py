@@ -167,6 +167,14 @@ def test_switching_gesture_restarts_evidence():
     assert fired[0][0].name == "Cmd+Shift+Tab"
 
 
+def test_bound_fist_is_a_command_not_an_escape():
+    eng, fired, _, _ = make()
+    eng.bindings.add(Binding("window", "fist", Action(ActionKind.KEY, "App Exposé")))
+    arm(eng)
+    eng.on_token(tok("fist", int(2.3 * S)))
+    assert fired and fired[0][0].name == "App Exposé" and eng.state == IDLE
+
+
 def test_escape_by_fist_held_one_second():
     eng, fired, _, _ = make()
     arm(eng)

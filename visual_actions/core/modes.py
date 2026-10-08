@@ -9,7 +9,7 @@ HOLDING --tick, evidence >= leader_hold--> ARMED(namespace, deadline)
 ARMED   --bound token--------------------> fire_mass += confidence; >= fire_evidence -> fire -> IDLE
 ARMED   --different bound token----------> fire_mass restarts with that gesture
 ARMED   --tick >= deadline---------------> IDLE (timeout)
-ANY     --fist held escape_fist_s--------> IDLE
+ANY     --fist held escape_fist_s--------> IDLE   (only while fist is unbound in the namespace)
 ANY     --hand lost escape_lost_s--------> IDLE
 
 Confidence therefore accelerates or decelerates both phases: a sure palm arms
@@ -83,7 +83,8 @@ class ModeEngine:
 
     def on_token(self, tok: Token) -> None:
         self._lost_since_ns = None
-        if tok.name == FIST:
+        fist_is_escape = self.bindings.lookup(self.namespace or self.default_namespace, FIST) is None
+        if tok.name == FIST and fist_is_escape:
             if self._fist_since_ns is None:
                 self._fist_since_ns = tok.t_ns
             elif tok.t_ns - self._fist_since_ns >= self.timing.escape_fist_ns and self.state != IDLE:
