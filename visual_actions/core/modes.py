@@ -70,6 +70,13 @@ class ModeEngine:
         self._lost_since_ns: int | None = None
         self._fire_gesture: str | None = None
         self._fire_mass: float = 0.0
+        self._hold_rate: float = 0.0
+
+    def projected_hold_ns(self, t_ns: int) -> float:
+        """Evidence extrapolated to t_ns at the last token's rate, so arming and the ring are smooth."""
+        if self.state != HOLDING or self._last_palm_ns is None or self._hold_rate <= 0:
+            return self.hold_evidence_ns
+        return self.hold_evidence_ns + (t_ns - self._last_palm_ns) * self._hold_rate
 
     # -- inputs -------------------------------------------------------------
 
@@ -97,7 +104,9 @@ class ModeEngine:
             self._last_palm_ns = tok.t_ns
             rate = hold_rate(tok.confidence, self.timing.confidence_gain) if tok.still else 0.0
             self.hold_evidence_ns = max(0.0, self.hold_evidence_ns + dt * rate)
-            self.bus.publish(HoldProgress(tok.t_ns, min(1.0, self.hold_evidence_ns / self.timing.leader_hold_ns)))
+            self._hold_rate = rate
+            hold = self.timing.leader_hold_ns
+            self.bus.publish(HoldProgress(tok.t_ns, min(1.0, self.hold_evidence_ns / hold), rate * 1e9 / hold))
         elif self.state == ARMED:
             if tok.name == OPEN_PALM:
                 return  # the leader itself never fires a command
@@ -124,7 +133,7 @@ class ModeEngine:
         ):
             self._go(IDLE, t_ns)
             return
-        if self.state == HOLDING and self.hold_evidence_ns >= self.timing.leader_hold_ns:
+        if self.state == HOLDING and self.projected_hold_ns(t_ns) >= self.timing.leader_hold_ns:
             self.namespace = self.default_namespace
             self._deadline_ns = t_ns + self.timing.command_timeout_ns
             self._fire_gesture, self._fire_mass = None, 0.0
@@ -145,6 +154,7 @@ class ModeEngine:
             self._fist_since_ns = None
             self._lost_since_ns = None
             self._fire_gesture, self._fire_mass = None, 0.0
+            self._hold_rate = 0.0
         self.bus.publish(
             ModeChanged(t_ns=t_ns, old=old, new=new, namespace=self.namespace, deadline_ns=self._deadline_ns)
         )

@@ -85,6 +85,8 @@ class Overlay:
         self.mode = IDLE
         self.mode_since_ns = 0
         self.hold_fraction = 0.0
+        self.hold_rate = 0.0
+        self.hold_at_ns = 0
         self.deadline_ns: int | None = None
         self.last_token = ""
         self.flash_until_ns = 0
@@ -120,7 +122,7 @@ class Overlay:
             self.hold_fraction = 0.0
 
     def _on_hold(self, ev: HoldProgress) -> None:
-        self.hold_fraction = ev.fraction
+        self.hold_fraction, self.hold_rate, self.hold_at_ns = ev.fraction, ev.rate, ev.t_ns
 
     def _on_token(self, ev: TokenEmitted) -> None:
         self.last_token = ev.token.name
@@ -136,7 +138,7 @@ class Overlay:
         if flashing:
             s.update(mode=self.mode, progress=1.0, label=self.flash_text, sub="fired", flash=True)
         elif self.mode == HOLDING:
-            p = self.hold_fraction  # confidence-weighted, from the engine
+            p = min(1.0, self.hold_fraction + max(0.0, self.hold_rate) * (now - self.hold_at_ns) / 1e9)
             s.update(mode=HOLDING, progress=p, label="Hold…", sub=f"palm {min(100, int(p * 100))}%", flash=False)
         elif self.mode == ARMED and self.deadline_ns:
             left = max(0, self.deadline_ns - now)

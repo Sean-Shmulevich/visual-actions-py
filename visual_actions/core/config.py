@@ -14,7 +14,7 @@ from .types import Action, ActionKind, Binding
 
 @dataclass
 class TimingConfig:
-    leader_hold_s: float = 2.0
+    leader_hold_s: float = 1.4
     command_timeout_s: float = 5.0
     escape_fist_s: float = 1.0
     escape_lost_s: float = 1.5

@@ -45,6 +45,7 @@ class ModeChanged:
 class HoldProgress:
     t_ns: int
     fraction: float  # 0..1 of the leader hold, confidence-weighted
+    rate: float = 0.0  # evidence per wall-clock second, in units of the full hold (for smooth extrapolation)
 
 
 @dataclass(frozen=True)
