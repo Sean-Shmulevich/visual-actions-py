@@ -26,8 +26,16 @@ KEYCODES = {
     "esc": 0x35, "escape": 0x35, "left": 0x7B, "right": 0x7C, "down": 0x7D, "up": 0x7E,
     "f1": 0x7A, "f2": 0x78, "f3": 0x63, "f4": 0x76, "f5": 0x60, "f6": 0x61, "f7": 0x62,
     "f8": 0x64, "f9": 0x65, "f10": 0x6D, "f11": 0x67, "f12": 0x6F,
+    "home": 0x73, "end": 0x77, "pageup": 0x74, "pagedown": 0x79,
     "[": 0x21, "]": 0x1E, "-": 0x1B, "=": 0x18, ";": 0x29, "'": 0x27, ",": 0x2B, ".": 0x2F, "/": 0x2C, "`": 0x32,
 }
+
+
+# Keys that a real keyboard reports with the "secondary fn" and "numeric pad" flags set.
+# Mission Control's Ctrl+Arrow desktop switch ignores synthetic arrows without them
+# (verified 2026-10-08: plain flags did nothing, with these flags the Space changed).
+FN_KEYS = {"left", "right", "up", "down", "home", "end", "pageup", "pagedown",
+           "f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "f9", "f10", "f11", "f12"}
 
 
 class MacAutomation:
@@ -59,9 +67,12 @@ class MacAutomation:
         for m in c.modifiers:
             self._post(MOD_KEYCODES[m], True, flags)
             time.sleep(0.03)
-        self._post(KEYCODES[c.key], True, flags)
+        key_flags = flags
+        if c.key in FN_KEYS:
+            key_flags |= self._q.kCGEventFlagMaskSecondaryFn | self._q.kCGEventFlagMaskNumericPad
+        self._post(KEYCODES[c.key], True, key_flags)
         time.sleep(0.03)
-        self._post(KEYCODES[c.key], False, flags)
+        self._post(KEYCODES[c.key], False, key_flags)
         time.sleep(0.12 if c.modifiers else 0.0)
         for m in reversed(c.modifiers):
             self._post(MOD_KEYCODES[m], False, 0)
