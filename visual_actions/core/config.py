@@ -22,6 +22,7 @@ class TimingConfig:
     tick_ms: int = 10  # queue drain + timers; 10 ms keeps drag moves from bunching into 50 ms bursts
     confidence_gain: float = 1.5  # hold fill rate at confidence 1.0 (1.0 = wall clock)
     leader_min_confidence: float = 0.8  # palm tokens below this neither start nor fill the hold
+    hold_break_tokens: int = 2  # consecutive non-palm tokens (250 ms each) before a hold is abandoned
     drag_lost_grace_s: float = 2.5  # hand lost mid-drag: window stays and waits this long for the hand
     repeat_window_s: float = 1.5  # after a repeatable action, a sideways slide of the same shape fires it again within this
     repeat_slide: float = 0.10  # the slide: wrist must move this fraction of the frame width sideways
@@ -36,6 +37,7 @@ class TimingConfig:
             confidence_gain=self.confidence_gain,
             leader_min_confidence=self.leader_min_confidence,
             drag_lost_grace_ns=int(self.drag_lost_grace_s * s),
+            hold_break_tokens=self.hold_break_tokens,
             repeat_window_ns=int(self.repeat_window_s * s),
             repeat_slide=self.repeat_slide,
         )
@@ -136,6 +138,9 @@ DEFAULT_BINDINGS: list[dict[str, Any]] = [
     # three fingers up, then a fast sideways swipe: trackpad convention (content follows the hand)
     {"gesture": "three_up_swipe_left", "action": {"kind": "key", "name": "Desktop right", "chord": "ctrl+right"}},
     {"gesture": "three_up_swipe_right", "action": {"kind": "key", "name": "Desktop left", "chord": "ctrl+left"}},
+    # same with the blade (fingers together, edge-on), for a head-to-head on robustness
+    {"gesture": "blade_swipe_left", "action": {"kind": "key", "name": "Desktop right", "chord": "ctrl+right"}},
+    {"gesture": "blade_swipe_right", "action": {"kind": "key", "name": "Desktop left", "chord": "ctrl+left"}},
 ]
 
 

@@ -109,6 +109,8 @@ def test_moving_palm_pauses_the_count():
 def test_breaking_the_hold_returns_to_idle():
     eng, fired, _, _ = make()
     eng.on_token(tok("open_palm", 0))
+    eng.on_token(tok("none", int(0.25 * S)))
+    assert eng.state == HOLDING  # one flicker is tolerated
     eng.on_token(tok("none", int(0.5 * S)))
     assert eng.state == IDLE
     eng.on_tick(3 * S)

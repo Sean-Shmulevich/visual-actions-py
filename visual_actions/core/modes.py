@@ -4,7 +4,7 @@ replays on fake time.
 IDLE    --open_palm & still--------------> HOLDING (evidence 0)
 HOLDING --open_palm token----------------> evidence += dt * rate(confidence)
                                            rate = clamp((c - 0.5) / 0.5, -1, 1) * gain
-HOLDING --token != open_palm-------------> IDLE
+HOLDING --token != open_palm-------------> hold pauses; IDLE after hold_break_tokens in a row
 HOLDING --tick, evidence >= leader_hold--> ARMED(namespace, deadline)
 ARMED   --bound token--------------------> fire_mass += confidence; >= fire_evidence -> fire -> IDLE
 ARMED   --different bound token----------> fire_mass restarts with that gesture
@@ -52,6 +52,7 @@ class Timing:
     confidence_gain: float = 1.5  # fill rate at confidence 1.0, relative to wall clock
     drag_lost_grace_ns: int = 2_500_000_000  # hand lost mid-drag: wait this long for it to come back
     repeat_window_ns: int = 1_500_000_000  # slide-to-repeat window after a repeatable action
+    hold_break_tokens: int = 2  # consecutive non-palm tokens tolerated during a hold (classifier flicker)
     repeat_slide: float = 0.10  # sideways wrist travel (fraction of frame width) that counts as a slide
     leader_min_confidence: float = 0.8  # palm tokens below this neither start nor fill the hold
 
@@ -90,6 +91,7 @@ class ModeEngine:
         self._fire_gesture: str | None = None
         self._fire_mass: float = 0.0
         self._hold_rate: float = 0.0
+        self._hold_misses = 0
         self._repeat_action: Action | None = None
         self._repeat_gesture: str | None = None
         self._repeat_anchor_x: float = 0.5
@@ -125,11 +127,19 @@ class ModeEngine:
             if tok.name == OPEN_PALM and tok.still and tok.confidence >= self.timing.leader_min_confidence:
                 self.hold_evidence_ns = 0.0
                 self._last_palm_ns = tok.t_ns
+                self._hold_misses = 0
                 self._go(HOLDING, tok.t_ns)
         elif self.state == HOLDING:
             if tok.name != OPEN_PALM:
-                self._go(IDLE, tok.t_ns)
+                # classifier flicker: a brief non-palm token pauses the hold instead of killing it
+                self._hold_misses += 1
+                if self._hold_misses >= self.timing.hold_break_tokens:
+                    self._go(IDLE, tok.t_ns)
+                else:
+                    self._last_palm_ns = tok.t_ns  # no evidence for the gap
+                    self._hold_rate = 0.0
                 return
+            self._hold_misses = 0
             dt = 0 if self._last_palm_ns is None else tok.t_ns - self._last_palm_ns
             self._last_palm_ns = tok.t_ns
             sure = tok.still and tok.confidence >= self.timing.leader_min_confidence
