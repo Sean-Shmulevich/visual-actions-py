@@ -51,6 +51,17 @@ def test_moving_palm_does_not_hold():
     assert eng.state == IDLE
 
 
+def test_moving_palm_during_hold_restarts_the_count():
+    eng, fired, _ = make()
+    eng.on_token(tok("open_palm", 0))
+    eng.on_token(tok("open_palm", int(1.5 * S), still=False))
+    assert eng.state == HOLDING
+    eng.on_tick(int(2.5 * S))
+    assert eng.state == HOLDING  # only 1.0 s since the restart
+    eng.on_tick(int(3.5 * S))
+    assert eng.state == ARMED
+
+
 def test_breaking_the_hold_returns_to_idle():
     eng, fired, _ = make()
     eng.on_token(tok("open_palm", 0))

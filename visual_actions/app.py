@@ -23,6 +23,10 @@ def run_live(cfg: Config, dry_run: bool, use_gate: bool = True, verbose: bool = 
 
     bus = Bus()
     Pipeline(bus, cfg, Dispatcher(bus, services.automation))
+    if cfg.feedback.audio:
+        from .ui.sound import SoundFeedback
+
+        SoundFeedback(bus)
     if verbose:
         bus.subscribe(TokenEmitted, lambda e: print(f"token {e.token.name:10s} conf={e.token.confidence:.2f} still={e.token.still}"))
         bus.subscribe(ModeChanged, lambda e: print(f"mode  {e.old} -> {e.new}"))

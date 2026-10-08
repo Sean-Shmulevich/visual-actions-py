@@ -1,7 +1,8 @@
 """The leader-flow state machine. Time only ever arrives on Tick, so it replays on fake time.
 
 IDLE    --open_palm & still--------------> HOLDING
-HOLDING --token != open_palm or !still---> IDLE
+HOLDING --token != open_palm-------------> IDLE
+HOLDING --open_palm but moving-----------> HOLDING (hold restarts)
 HOLDING --tick, held >= leader_hold------> ARMED(namespace, deadline)
 ARMED   --token in bindings[namespace]---> fire -> IDLE
 ARMED   --tick >= deadline---------------> IDLE (timeout)
@@ -69,8 +70,10 @@ class ModeEngine:
                 self._hold_start_ns = tok.t_ns
                 self._go(HOLDING, tok.t_ns)
         elif self.state == HOLDING:
-            if tok.name != OPEN_PALM or not tok.still:
+            if tok.name != OPEN_PALM:
                 self._go(IDLE, tok.t_ns)
+            elif not tok.still:
+                self._hold_start_ns = tok.t_ns  # still a palm, just moving: restart the count
         elif self.state == ARMED:
             if tok.name == OPEN_PALM:
                 return  # the leader itself never fires a command
