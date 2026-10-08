@@ -25,8 +25,9 @@ from AppKit import (
 )
 from Foundation import NSString
 
+from ..core.drag import DragEvent, DragPhase
 from ..core.events import ActionFired, Bus, HoldProgress, ModeChanged, Tick, TokenEmitted
-from ..core.modes import ARMED, HOLDING, IDLE
+from ..core.modes import ARMED, DRAGGING, HOLDING, IDLE
 
 W, H = 260, 72
 
@@ -59,6 +60,7 @@ class OverlayView(NSView):
             color = {
                 HOLDING: NSColor.colorWithCalibratedRed_green_blue_alpha_(0.35, 0.65, 1.0, 1.0),
                 ARMED: NSColor.colorWithCalibratedRed_green_blue_alpha_(0.35, 0.85, 0.45, 1.0),
+                DRAGGING: NSColor.colorWithCalibratedRed_green_blue_alpha_(0.85, 0.55, 1.0, 1.0),
             }.get(s["mode"], NSColor.whiteColor())
             if s["flash"]:
                 color = NSColor.colorWithCalibratedRed_green_blue_alpha_(1.0, 0.8, 0.2, 1.0)
@@ -89,6 +91,7 @@ class Overlay:
         self.hold_at_ns = 0
         self.deadline_ns: int | None = None
         self.last_token = ""
+        self.drag_window = ""
         self.flash_until_ns = 0
         self.flash_text = ""
 
@@ -113,8 +116,12 @@ class Overlay:
         bus.subscribe(ModeChanged, self._on_mode)
         bus.subscribe(HoldProgress, self._on_hold)
         bus.subscribe(TokenEmitted, self._on_token)
+        bus.subscribe(DragEvent, self._on_drag)
         bus.subscribe(ActionFired, self._on_action)
         bus.subscribe(Tick, self._on_tick)
+
+    def _on_drag(self, ev: DragEvent) -> None:
+        self.drag_window = ev.window if ev.phase in (DragPhase.START, DragPhase.MOVE) else ""
 
     def _on_mode(self, ev: ModeChanged) -> None:
         self.mode, self.mode_since_ns, self.deadline_ns = ev.new, ev.t_ns, ev.deadline_ns
@@ -140,6 +147,8 @@ class Overlay:
         elif self.mode == HOLDING:
             p = min(1.0, self.hold_fraction + max(0.0, self.hold_rate) * (now - self.hold_at_ns) / 1e9)
             s.update(mode=HOLDING, progress=p, label="Hold…", sub=f"palm {min(100, int(p * 100))}%", flash=False)
+        elif self.mode == DRAGGING:
+            s.update(mode=DRAGGING, progress=1.0, label="drag", sub=self.drag_window[:34], flash=False)
         elif self.mode == ARMED and self.deadline_ns:
             left = max(0, self.deadline_ns - now)
             s.update(mode=ARMED, progress=left / self.timeout_ns, label="window", sub=f"{left / 1e9:.1f}s · {self.last_token}", flash=False)

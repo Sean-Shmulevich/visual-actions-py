@@ -300,6 +300,37 @@ when it is not:
   0.5 tokens fire on the second, tokens under `min_token_confidence` (0.3) never
   count. Switching gesture restarts the mass.
 
+## 11b. Pinch-and-drag (`core/pinch.py`, `core/pointer.py`, `core/drag.py`)
+
+Added 2026-10-08. Moves the window under the hand while the user pinches.
+
+- **Pinch** is geometric and per frame: 3-D thumb-tip to index-tip distance in
+  canonical units (wrist→middle-MCP = 1), with hysteresis (on < 0.30, off > 0.50,
+  calibrated from data by `tools/calibrate.py`) and a 2-frame debounce. While a
+  change is pending the detector emits nothing, so the opening hand's jumping
+  midpoint never yanks the window on release. The pinch point is the thumb/index
+  midpoint in the user frame; hand scale (wrist→middle-MCP in frame units) rides
+  along as a depth proxy.
+- **Pointer** maps the user-frame point to screen points through a *reach box*
+  (the part of the frame a seated user can cover, default 0.15..0.85, calibrated
+  from the 5th..95th percentile of recorded wrist positions). Optional depth
+  normalization scales the box with hand size (`depth_gain`, off by default). A
+  One Euro filter per axis smooths jitter without adding lag at speed.
+- **Drag controller**: on pinch START it maps the point, asks the driver for the
+  window under it, records the grab pointer and window origin; each MOVE sets the
+  window to origin + (pointer − grab pointer) × gain; END (or hand lost) releases in
+  place. A pinch over nothing is a MISS and the armed window stays armed.
+- **Mode engine**: ARMED + pinch START over a window → DRAGGING; tokens are ignored
+  while dragging (the pinched hand classifies as anything); END or hand-lost →
+  IDLE. The 5 s command deadline does not apply while dragging.
+- **Driver**: `window_at` via CGWindowList (~2 ms), `move_window` via the AX
+  position attribute with a per-window element cache (first move ~84 ms, then
+  ~0.5 ms). Mock driver holds fake windows for the headless suite.
+- **Tests**: `test_pinch.py`, `test_pointer.py`, `test_drag.py`,
+  `test_pipeline_drag.py` (synthetic palm→pinch→drag sessions through the whole
+  pipeline on fake time, asserting the mock window's final position), plus the
+  driver's `test_windows_mock.py`.
+
 ## 12. Bindings and config (`core/bindings.py`, `core/config.py`)
 
 ```toml

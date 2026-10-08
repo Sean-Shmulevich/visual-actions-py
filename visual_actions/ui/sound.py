@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 
 from ..core.events import ActionFired, Bus, ModeChanged
-from ..core.modes import ARMED, HOLDING, IDLE
+from ..core.modes import ARMED, DRAGGING, HOLDING, IDLE
 
 SOUNDS = Path("/System/Library/Sounds")
 MAP = {
@@ -18,6 +18,8 @@ MAP = {
     "fired": SOUNDS / "Pop.aiff",
     "failed": SOUNDS / "Basso.aiff",
     "timeout": SOUNDS / "Bottle.aiff",
+    "grab": SOUNDS / "Morse.aiff",
+    "drop": SOUNDS / "Pop.aiff",
 }
 
 
@@ -35,7 +37,11 @@ class SoundFeedback:
         self._fired_at: int | None = None
 
     def _on_mode(self, ev: ModeChanged) -> None:
-        if ev.new == ARMED:
+        if ev.new == DRAGGING:
+            play("grab")
+        elif ev.old == DRAGGING and ev.new == IDLE:
+            play("drop")
+        elif ev.new == ARMED:
             play("armed")
         elif ev.old == ARMED and ev.new == IDLE and self._fired_at != ev.t_ns:
             play("timeout")  # left ARMED without an action at this instant
