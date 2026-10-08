@@ -69,6 +69,11 @@ class DesktopAutomation(Protocol):
         """Open a URL or file with the system's default handler."""
         ...
 
+    def focus_at(self, x: float, y: float) -> bool:
+        """Activate the app and window under the screen point and give keyboard focus to the
+        element there (a terminal pane, a sidebar), without any mouse click."""
+        ...
+
     # -- windows (screen points, origin top-left) ---------------------------
 
     def list_windows(self) -> list[WindowInfo]:

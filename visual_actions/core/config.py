@@ -125,6 +125,7 @@ class DragConfig:
     snap_corner_px: float = 110.0  # this close to both edges arms a quarter zone
     snap_dwell_ms: int = 150  # the pointer must stay in a zone this long before it previews
     snap_quarters: bool = True
+    focus_on_grab: bool = True  # a grabbed window becomes active and the pane under the pinch gets keyboard focus
     snap_maximize: bool = True  # top edge = maximize to the visible frame
 
 

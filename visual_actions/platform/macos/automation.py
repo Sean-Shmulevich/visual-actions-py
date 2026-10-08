@@ -137,6 +137,9 @@ class MacAutomation:
             return NativeResult(ok=False, stderr=f"timed out after {timeout_s}s")
         return NativeResult(ok=p.returncode == 0, stdout=p.stdout.strip(), stderr=p.stderr.strip())
 
+    def focus_at(self, x: float, y: float) -> bool:
+        return self.windows.focus_at(x, y)
+
     def open(self, target: str) -> bool:
         return subprocess.run(["open", target], check=False, capture_output=True).returncode == 0
 

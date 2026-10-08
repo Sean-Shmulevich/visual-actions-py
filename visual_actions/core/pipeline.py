@@ -68,7 +68,9 @@ class Pipeline:
                     maximize=d.snap_maximize,
                 ),
             )
-        self.drag = DragController(bus, mover, pointer, gain=d.gain, snap=snap) if d.enabled else None
+        self.drag = (
+            DragController(bus, mover, pointer, gain=d.gain, snap=snap, focus_on_grab=d.focus_on_grab) if d.enabled else None
+        )
         self.engine = ModeEngine(
             bus=bus,
             bindings=bindings if bindings is not None else config.bindings(),
@@ -168,6 +170,9 @@ class AutomationMover:
 
     def move(self, handle, x: float, y: float) -> bool:
         return self.automation.move_window(handle, x, y)
+
+    def focus(self, handle, x: float, y: float) -> bool:
+        return self.automation.focus_at(x, y)
 
     def set_frame(self, handle, rect: Rect) -> bool:
         ok_size = self.automation.resize_window(handle, float(rect.w), float(rect.h))

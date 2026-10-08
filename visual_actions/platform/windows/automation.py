@@ -30,6 +30,9 @@ class WindowsAutomation:
         log.info("stub run_native %s", script_path)
         return NativeResult(ok=True, stdout="stub")
 
+    def focus_at(self, x: float, y: float) -> bool:
+        return False
+
     def open(self, target: str) -> bool:
         log.info("stub open %s", target)
         return False

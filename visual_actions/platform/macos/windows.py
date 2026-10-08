@@ -52,6 +52,51 @@ def pick_window_at(windows: list[WindowInfo], x: float, y: float, own_pid: int) 
     return None
 
 
+def focus_first_focusable(element, parent, settable, set_focused, max_depth: int = 12) -> bool:
+    """Walk from the element under the pointer up its ancestors; focus the first that accepts
+    the focused attribute. Pure: the three callables abstract the AX API for testing."""
+    el = element
+    for _ in range(max_depth):
+        if el is None:
+            return False
+        if settable(el) and set_focused(el):
+            return True
+        el = parent(el)
+    return False
+
+
+def _ax_parent(el):
+    from ApplicationServices import (
+        AXUIElementCopyAttributeValue,
+        kAXErrorSuccess,
+        kAXParentAttribute,
+    )
+
+    err, parent = AXUIElementCopyAttributeValue(el, kAXParentAttribute, None)
+    return parent if err == kAXErrorSuccess else None
+
+
+def _ax_focus_settable(el) -> bool:
+    from ApplicationServices import (
+        AXUIElementIsAttributeSettable,
+        kAXErrorSuccess,
+        kAXFocusedAttribute,
+    )
+
+    err, ok = AXUIElementIsAttributeSettable(el, kAXFocusedAttribute, None)
+    return err == kAXErrorSuccess and bool(ok)
+
+
+def _ax_set_focused(el) -> bool:
+    from ApplicationServices import (
+        AXUIElementSetAttributeValue,
+        kAXErrorSuccess,
+        kAXFocusedAttribute,
+    )
+
+    return AXUIElementSetAttributeValue(el, kAXFocusedAttribute, True) == kAXErrorSuccess
+
+
 class MacWindows:
     def __init__(self) -> None:
         import Quartz
@@ -193,6 +238,42 @@ class MacWindows:
         vf = screen.visibleFrame()
         top = full.size.height - (vf.origin.y + vf.size.height)
         return Rect(int(vf.origin.x), int(top), int(vf.size.width), int(vf.size.height))
+
+    # -- focus ----------------------------------------------------------------
+
+    def focus_at(self, x: float, y: float) -> bool:
+        """Activate the app and window under (x, y) and focus the deepest element there that
+        accepts keyboard focus (a terminal pane, a web view, a text field). No mouse events."""
+        from AppKit import NSApplicationActivateIgnoringOtherApps, NSRunningApplication
+        from ApplicationServices import (
+            AXUIElementCopyElementAtPosition,
+            AXUIElementCreateSystemWide,
+            AXUIElementPerformAction,
+            AXUIElementSetAttributeValue,
+            kAXErrorSuccess,
+            kAXFocusedAttribute,
+            kAXMainAttribute,
+            kAXRaiseAction,
+        )
+
+        t0 = time.perf_counter()
+        win = self.window_at(x, y)
+        if win is None:
+            return False
+        app = NSRunningApplication.runningApplicationWithProcessIdentifier_(win.pid)
+        if app is not None:
+            app.activateWithOptions_(NSApplicationActivateIgnoringOtherApps)
+        el = self._ax_element(win)
+        if el is not None:
+            AXUIElementPerformAction(el, kAXRaiseAction)
+            AXUIElementSetAttributeValue(el, kAXMainAttribute, True)
+            AXUIElementSetAttributeValue(el, kAXFocusedAttribute, True)
+        err, hit = AXUIElementCopyElementAtPosition(AXUIElementCreateSystemWide(), float(x), float(y), None)
+        focused = False
+        if err == kAXErrorSuccess and hit is not None:
+            focused = focus_first_focusable(hit, _ax_parent, _ax_focus_settable, _ax_set_focused)
+        self.last_focus_ms = (time.perf_counter() - t0) * 1000
+        return el is not None or focused
 
     def forget(self, win: WindowInfo) -> None:
         self._ax_cache.pop(win.id, None)

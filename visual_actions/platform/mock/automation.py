@@ -65,6 +65,10 @@ class MockAutomation:
         self._rec("run_native", str(script_path), timeout_s)
         return NativeResult(ok=True, stdout="mock")
 
+    def focus_at(self, x: float, y: float) -> bool:
+        self._rec("focus_at", x, y)
+        return True
+
     def open(self, target: str) -> bool:
         self._rec("open", target)
         return True

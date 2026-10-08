@@ -27,6 +27,10 @@ class WindowMover(Protocol):
 
     def set_frame(self, handle: Any, rect: Rect) -> bool: ...
 
+    def focus(self, handle: Any, x: float, y: float) -> bool:
+        """Make the window active and focus the element under (x, y). Never a click."""
+        ...
+
     def label(self, handle: Any) -> str: ...
 
 
@@ -59,7 +63,9 @@ class DragController:
         pointer: SmoothedPointer,
         gain: float = 1.0,
         snap: SnapEngine | None = None,
+        focus_on_grab: bool = True,
     ) -> None:
+        self.focus_on_grab = focus_on_grab
         self.bus = bus
         self.mover = mover
         self.pointer = pointer
@@ -156,6 +162,8 @@ class DragController:
         self._pos = (float(frame.x), float(frame.y))
         self.suspended = False
         self.moves = 0
+        if self.focus_on_grab:
+            self.mover.focus(handle, sx, sy)  # the grabbed window becomes the active one
         if self.snap is not None:
             self.snap.reset()
         self.bus.publish(DragEvent(ev.t_ns, DragPhase.START, label, sx, sy))
@@ -227,6 +235,11 @@ class FakeWindows:
             for lb, x, y, w, h in (windows or [("Front", 300, 200, 600, 400), ("Back", 100, 100, 900, 600)])
         ]
         self.moves: list[tuple[str, float, float]] = []
+        self.focused: list[tuple[str, float, float]] = []
+
+    def focus(self, handle: dict[str, Any], x: float, y: float) -> bool:
+        self.focused.append((handle["label"], x, y))
+        return True
 
     def grab(self, x: float, y: float) -> dict[str, Any] | None:
         for w in self.windows:
