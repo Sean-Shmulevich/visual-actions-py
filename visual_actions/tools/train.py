@@ -19,10 +19,12 @@ from ..core.recorder import read_session
 from ..core.types import HandFrame
 from ..paths import datasets_dir, models_dir
 
+EXCLUDE = {"no_pinch"}  # derived from the other classes by import_public; not a gesture
 
-def load(datasets: Path, mirror: bool = True) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+
+def load(datasets: Path, mirror: bool = True, exclude: set[str] = EXCLUDE) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     xs, ys, groups = [], [], []
-    for label_dir in sorted(p for p in datasets.iterdir() if p.is_dir()):
+    for label_dir in sorted(p for p in datasets.iterdir() if p.is_dir() and p.name not in exclude):
         for i, f in enumerate(sorted(label_dir.glob("*.jsonl"))):
             for r in read_session(f):
                 if isinstance(r, HandFrame):
