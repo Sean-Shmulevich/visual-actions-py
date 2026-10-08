@@ -676,31 +676,81 @@ def generate_sequence(
     base_view.jitter = _u(rng, 0.003, 0.007)
     wobble = (_u(rng, -8, 8), _u(rng, -8, 8), _u(rng, -6, 6))
     if kind == "pinch_drag":
+        # Leader first: a still open palm until the engine arms, then the pinch forms in
+        # place, the pinched hand drags along a path, releases, and the hand is lost.
+        # Facing the camera so the hand-written open_palm rule is confident, palm_scale 1
+        # and modest z so the canonical 3-D thumb-index distance stays tight (< 0.3).
+        view = View(
+            yaw=_u(rng, -12, 12),
+            pitch=_u(rng, 0, 18),
+            roll=_u(rng, -8, 8),
+            scale=_u(rng, 0.24, 0.34),
+            center=(_u(rng, 0.35, 0.65), _u(rng, 0.4, 0.65)),
+            depth=_u(rng, 12, 20),
+            z_gain=_u(rng, 0.5, 0.7),
+            jitter=_u(rng, 0.002, 0.004),
+            palm_scale=1.0,
+        )
         rest = pose_open_palm(rng)
+        for f in FINGERS:  # keep the leader unambiguous: straight, spread fingers, thumb out
+            rest.fingers[f].mcp = min(rest.fingers[f].mcp, 5.0)
+            rest.fingers[f].pip = min(rest.fingers[f].pip, 8.0)
+        rest.thumb = ThumbPose(
+            flex=_u(rng, 0, 8), abd=_u(rng, 40, 55), mcp=_u(rng, 0, 8), ip=_u(rng, 0, 8)
+        )
+        # The leader must read as a confident open palm to the pipeline's own rule; resample
+        # the view until it does (the rule is strict about thumb spread and foreshortening).
+        from ..core.normalize import to_user_frame
+        from ..core.recognizer import OPEN_PALM, RuleRecognizer
+
+        rule = RuleRecognizer()
+        for _try in range(60):
+            probe = to_hand_frame(render(forward_kinematics(rest), view, None), 0, Hand.RIGHT)
+            name, conf = rule.classify(to_user_frame(probe, True))
+            if name == OPEN_PALM and conf >= 0.9:
+                break
+            view.yaw, view.pitch, view.roll = _u(rng, -12, 12), _u(rng, 0, 18), _u(rng, -8, 8)
+            rest = pose_open_palm(rng)
+            for f in FINGERS:
+                rest.fingers[f].mcp = min(rest.fingers[f].mcp, 5.0)
+                rest.fingers[f].pip = min(rest.fingers[f].pip, 8.0)
+            rest.thumb = ThumbPose(
+                flex=_u(rng, 0, 8), abd=_u(rng, 40, 60), mcp=_u(rng, 0, 8), ip=_u(rng, 0, 8)
+            )
         pinch = pose_pinch(rng)
-        form = _u(rng, 0.15, 0.3)
-        drag = min(seconds - form - 0.3, _u(rng, 1.0, 3.0))
-        release_at = form + max(drag, 0.3)
-        start = np.array(base_view.center)
+        for _retry in range(8):  # the drag must never release early: want a very tight pinch
+            pts = forward_kinematics(pinch)
+            if float(np.linalg.norm(pts[4] - pts[8])) < 0.12:
+                break
+            pinch = _solve_pinch(pose_pinch(rng), rng, iters=400)
+        hold_s = _u(rng, 1.5, 1.8)
+        form_s = _u(rng, 0.15, 0.3)
+        release_s = 0.25
+        drag_s = max(1.0, min(3.0, seconds - hold_s - form_s - release_s))
+        t_form, t_drag, t_release = hold_s, hold_s + form_s, hold_s + form_s + drag_s
+        n = int((t_release + release_s) * fps) + 1
+        start = np.array(view.center)
         target = np.array([_u(rng, 0.15, 0.85), _u(rng, 0.2, 0.85)])
         ctrl = (start + target) / 2 + np.array([_u(rng, -0.2, 0.2), _u(rng, -0.2, 0.2)])
         for i in range(n):
             t = i / fps
-            if t < form:
-                pose, pos = _lerp_pose(rest, pinch, _smooth(t / form)), start
-            elif t < release_at:
-                s = _smooth((t - form) / max(release_at - form, 1e-6))
-                pos = (1 - s) ** 2 * start + 2 * (1 - s) * s * ctrl + s * s * target
-                pose = pinch
+            v = View(**view.__dict__)
+            if t < t_form:
+                pose, pos = rest, start  # still: only landmark jitter moves the wrist
+            elif t < t_drag:
+                pose, pos = _lerp_pose(rest, pinch, _smooth((t - t_form) / form_s)), start
+            elif t < t_release:
+                sdr = _smooth((t - t_drag) / drag_s)
+                pos = (1 - sdr) ** 2 * start + 2 * (1 - sdr) * sdr * ctrl + sdr * sdr * target
+                pose = pinch  # the solved pinch, unchanged, for the whole drag
+                v.yaw += wobble[0] * 0.5 * math.sin(t * 1.3)
             else:
-                s = min(1.0, (t - release_at) / 0.25)
-                pose, pos = _lerp_pose(pinch, rest, _smooth(s)), target
-            view = View(**{**base_view.__dict__, "center": (float(pos[0]), float(pos[1]))})
-            view.yaw += wobble[0] * math.sin(t * 1.3)
-            view.pitch += wobble[1] * math.sin(t * 0.9 + 1)
+                sr = min(1.0, (t - t_release) / release_s)
+                pose, pos = _lerp_pose(pinch, rest, _smooth(sr)), target
+            v.center = (float(pos[0]), float(pos[1]))
             frames.append(
                 to_hand_frame(
-                    render(forward_kinematics(pose), view, rng), t0_ns + i * dt_ns, Hand.RIGHT
+                    render(forward_kinematics(pose), v, rng), t0_ns + i * dt_ns, Hand.RIGHT
                 )
             )
     elif kind == "palm_hold":
