@@ -184,10 +184,18 @@ def load_config(path: Path | None) -> Config:
     _merge(cfg.drag, data.get("drag", {}))
     _merge(cfg.swipe, data.get("swipe", {}))
     if "namespaces" in data:
-        cfg.namespaces = {
-            ns: NamespaceConfig(leader=nc.get("leader", "open_palm"), bindings=list(nc.get("bindings", [])))
-            for ns, nc in data["namespaces"].items()
-        }
+        # User bindings override defaults per gesture; default bindings the file does not
+        # mention are kept, so a config saved before a gesture existed still gets it.
+        merged: dict[str, NamespaceConfig] = {}
+        for ns, nc in data["namespaces"].items():
+            user = list(nc.get("bindings", []))
+            have = {b["gesture"] for b in user}
+            defaults = cfg.namespaces.get(ns)
+            extra = [b for b in defaults.bindings if b["gesture"] not in have] if defaults else []
+            merged[ns] = NamespaceConfig(leader=nc.get("leader", "open_palm"), bindings=user + extra)
+        for ns, nc in cfg.namespaces.items():
+            merged.setdefault(ns, nc)
+        cfg.namespaces = merged
     return cfg
 
 
