@@ -12,6 +12,7 @@ from ..core.config import Config
 from ..core.dispatcher import Dispatcher
 from ..core.events import ActionFired, Bus, ModeChanged, Tick
 from ..core.pipeline import Pipeline
+from ..core.presence import PresenceFilter
 from ..paths import config_path
 from ..platform import factory
 from ..session import SessionRecorder
@@ -106,7 +107,7 @@ class VisualActionsApp(rumps.App):
 
             self.session = SessionRecorder(sessions_dir(), self.bus)
         self.preview = DebugPreview() if self.cfg.feedback.preview else None
-        self.capture = CaptureThread(self.services.camera, self.q, use_gate=self.use_gate, sink=self.session, face_veto=self.cfg.leader.face_veto, preview=self.preview)
+        self.capture = CaptureThread(self.services.camera, self.q, use_gate=self.use_gate, sink=self.session, face_veto=self.cfg.leader.face_veto, preview=self.preview, presence=PresenceFilter.from_config(self.cfg.presence))
         self.capture.start()
         self.toggle_item.title = "Stop"
 

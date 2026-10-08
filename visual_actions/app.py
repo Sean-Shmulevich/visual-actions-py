@@ -9,6 +9,7 @@ from .core.config import Config
 from .core.dispatcher import Dispatcher
 from .core.events import ActionFired, Bus, ModeChanged, Tick, TokenEmitted
 from .core.pipeline import Pipeline
+from .core.presence import PresenceFilter
 from .platform import factory
 from .ui.capture import CaptureThread
 
@@ -37,7 +38,7 @@ def run_live(cfg: Config, dry_run: bool, use_gate: bool = True, verbose: bool = 
 
         session = SessionRecorder(sessions_dir(), bus)
         print(f"recording session to {session.dir}")
-    capture = CaptureThread(services.camera, q, use_gate=use_gate, sink=session, face_veto=cfg.leader.face_veto)
+    capture = CaptureThread(services.camera, q, use_gate=use_gate, sink=session, face_veto=cfg.leader.face_veto, presence=PresenceFilter.from_config(cfg.presence))
     if cfg.feedback.dashboard:
         from .ui.dashboard import Dashboard
 

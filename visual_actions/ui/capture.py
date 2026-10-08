@@ -17,13 +17,22 @@ from .face import FaceTracker, hand_face_overlap
 class CaptureThread:
     out_of_frame = staticmethod(PresenceFilter.out_of_frame)  # kept for callers/tests
 
-    def __init__(self, camera: CameraSource, q: queue.Queue, use_gate: bool = True, sink: object | None = None, face_veto: bool = True, preview: object | None = None) -> None:
+    def __init__(
+        self,
+        camera: CameraSource,
+        q: queue.Queue,
+        use_gate: bool = True,
+        sink: object | None = None,
+        face_veto: bool = True,
+        preview: object | None = None,
+        presence: PresenceFilter | None = None,
+    ) -> None:
         self.face_veto = face_veto
         self.preview = preview  # DebugPreview: annotated frames for the main thread to show
         self.camera = camera
         self.q = q
         self.sink = sink  # SessionRecorder-like: write_frame / write_hand / write_lost
-        self.presence = PresenceFilter()
+        self.presence = presence or PresenceFilter()
         self.gate: HandGate = MotionGate() if use_gate else AlwaysOpenGate()
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._run, name="capture", daemon=True)
