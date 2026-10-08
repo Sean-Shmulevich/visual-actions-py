@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .types import WRIST, HandFrame
+from .types import INDEX_TIP, THUMB_TIP, WRIST, HandFrame
 
 
 @dataclass(frozen=True)
@@ -32,12 +32,26 @@ class PresenceFilter:
 
     @classmethod
     def out_of_frame(cls, hf: HandFrame) -> str | None:
-        """MediaPipe keeps reporting a hand clamped to the border after it leaves."""
+        """MediaPipe keeps reporting a hand clamped to the border after it leaves.
+
+        The bottom edge is exempt: a hand reaching down naturally has its wrist below
+        the frame while the fingers and the pinch are still in view (2026-10-08 feedback).
+        A hand is off-screen when the wrist, the pinch point or most landmarks have left
+        through the left, right or top.
+        """
         m = cls.EDGE_MARGIN
+
+        def out_lrt(x: float, y: float) -> bool:  # outside via left, right or top only
+            return x < -m or x > 1 + m or y < -m
+
         w = hf.landmarks[WRIST]
-        if not (-m <= w.x <= 1 + m and -m <= w.y <= 1 + m):
+        if out_lrt(w.x, w.y):
             return f"wrist outside ({w.x:.2f},{w.y:.2f})"
-        outside = sum(1 for lm in hf.landmarks if not (-m <= lm.x <= 1 + m and -m <= lm.y <= 1 + m))
+        t, i = hf.landmarks[THUMB_TIP], hf.landmarks[INDEX_TIP]
+        px, py = (t.x + i.x) / 2, (t.y + i.y) / 2
+        if out_lrt(px, py) or py > 1 + m:
+            return f"pinch point outside ({px:.2f},{py:.2f})"
+        outside = sum(1 for lm in hf.landmarks if out_lrt(lm.x, lm.y))
         if outside >= cls.EDGE_MAX_OUTSIDE:
             xs = [lm.x for lm in hf.landmarks]
             ys = [lm.y for lm in hf.landmarks]
