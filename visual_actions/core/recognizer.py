@@ -36,8 +36,6 @@ H_LEFT = "h_left"
 H_RIGHT = "h_right"
 POINT_UP = "point_up"
 TWO_UP = "two_up"
-THREE_UP = "three_up"
-BLADE = "blade"  # fingers together, palm edge-on to the camera (a karate-chop hand)
 
 FINGERS = (
     (INDEX_MCP, INDEX_PIP, INDEX_TIP),
@@ -86,22 +84,12 @@ class RuleRecognizer:
         thumb_idx = float(np.linalg.norm(c.pts[THUMB_TIP][:2] - c.pts[INDEX_MCP][:2]))
         all_ext = all(e >= self.extended for e in ext)
         all_curl = all(e <= self.curled for e in ext)
-        if all_ext:
-            width = float(np.linalg.norm(c.pts[INDEX_MCP][:2] - c.pts[PINKY_MCP][:2]))
-            spread = float(np.linalg.norm(c.pts[INDEX_TIP][:2] - c.pts[PINKY_TIP][:2]))
-            # Real frontal palms measure ~0.48 wide / ~0.60 spread (2026-10-08 sessions);
-            # an edge-on hand with fingers together foreshortens to well under half that.
-            if width < 0.30 and spread < 0.40:
-                return BLADE, min(min(ext), 1.0 - width / 0.30)
         if all_ext and thumb_idx >= self.thumb_out:
             return OPEN_PALM, min(ext)
         if all_curl:
             return FIST, 1.0 - max(ext)
         v = c.pts[INDEX_TIP][:2] - c.pts[INDEX_MCP][:2]
         n = float(np.linalg.norm(v))
-        if n > 1e-6 and index >= self.extended and middle >= self.extended and ring >= self.extended and pinky <= self.curled:
-            if -v[1] / n >= self.direction_cos:
-                return THREE_UP, min(index, middle, ring, 1.0 - pinky)
         if n > 1e-6 and index >= self.extended and ring <= self.curled and pinky <= self.curled:
             cos_left, cos_up = -v[0] / n, -v[1] / n
             if middle >= self.extended:

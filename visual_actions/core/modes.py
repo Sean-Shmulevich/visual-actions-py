@@ -16,11 +16,10 @@ DRAGGING--pinch END--------------------> IDLE
 DRAGGING--hand lost--------------------> DRAGGING, suspended (window stays, red frame)
 suspended--pinch back within grace-----> DRAGGING resumed from the window's current place
 suspended--hand back unpinched / grace-> IDLE (dropped in place)
-ARMED   --swipe with shape S------------> fire binding "S_swipe_left|right" -> IDLE
 ARMED   --repeatable action fires------> REPEAT(deadline = now + repeat_window)
 REPEAT  --same shape, wrist slid sideways >= repeat_slide--> fire again, deadline refreshed
 REPEAT  --deadline-----------------------> IDLE
-ANY     --fist held escape_fist_s--------> IDLE   (only while fist is unbound in the namespace)
+ANY     --fist token (conf >= 0.6)-------> IDLE   (always; a drag is dropped in place)
 ANY     --hand lost escape_lost_s--------> IDLE
 
 Confidence therefore accelerates or decelerates both phases: a sure palm arms
@@ -38,7 +37,6 @@ from .drag import DragController
 from .events import Bus, HoldProgress, ModeChanged
 from .pinch import PinchEvent, PinchPhase
 from .recognizer import FIST, OPEN_PALM
-from .swipe import SwipeEvent
 from .types import Action, Token
 
 IDLE, HOLDING, ARMED, DRAGGING, REPEAT = "idle", "holding", "armed", "dragging", "repeat"
@@ -56,8 +54,6 @@ class Timing:
     hold_break_tokens: int = 2  # consecutive non-palm tokens tolerated during a hold (classifier flicker)
     quick_command_min_hold_ns: int = 300_000_000  # a clear palm this long, then a confident bound gesture, arms + fires at once
     quick_command_min_confidence: float = 0.85
-    swipe_chain_window_ns: int = 2_500_000_000  # after a swipe, stay armed this long for the next flick
-    swipe_return_ignore_ns: int = 700_000_000  # a reverse stroke this soon after a swipe is the hand coming back
     repeat_slide: float = 0.10  # sideways wrist travel (fraction of frame width) that counts as a slide
     leader_min_confidence: float = 0.8  # palm tokens below this neither start nor fill the hold
 
@@ -77,7 +73,9 @@ class ModeEngine:
         fire_evidence: float = 0.9,
         min_token_confidence: float = 0.3,
         drag: DragController | None = None,
+        fist_min_confidence: float = 0.6,
     ) -> None:
+        self.fist_min_confidence = fist_min_confidence
         self.drag = drag
         self.bus = bus
         self.bindings = bindings
@@ -97,7 +95,6 @@ class ModeEngine:
         self._fire_mass: float = 0.0
         self._hold_rate: float = 0.0
         self._hold_misses = 0
-        self._last_swipe: tuple[int, str] | None = None  # (t_ns, direction)
         self._repeat_action: Action | None = None
         self._repeat_gesture: str | None = None
         self._repeat_anchor_x: float = 0.5
@@ -113,22 +110,18 @@ class ModeEngine:
 
     def on_token(self, tok: Token) -> None:
         self._lost_since_ns = None
+        if tok.name == FIST and tok.confidence >= self.fist_min_confidence and self.state != IDLE:
+            # A fist always ends whatever is happening: hold, armed window, repeat, or a drag (dropped in place).
+            if self.state == DRAGGING and self.drag is not None:
+                self.drag.cancel(tok.t_ns)
+            self._go(IDLE, tok.t_ns)
+            return
         if self.state == DRAGGING:
             if self.drag is not None and self.drag.suspended:
                 # the hand is back but not pinching: drop where the window is
                 self.drag.cancel(tok.t_ns)
                 self._go(IDLE, tok.t_ns)
             return  # per-frame pinch events own this state; tokens are ignored
-        fist_is_escape = self.bindings.lookup(self.namespace or self.default_namespace, FIST) is None
-        if tok.name == FIST and fist_is_escape:
-            if self._fist_since_ns is None:
-                self._fist_since_ns = tok.t_ns
-            elif tok.t_ns - self._fist_since_ns >= self.timing.escape_fist_ns and self.state != IDLE:
-                self._go(IDLE, tok.t_ns)
-                return
-        else:
-            self._fist_since_ns = None
-
         if self.state == IDLE:
             if tok.name == OPEN_PALM and tok.still and tok.confidence >= self.timing.leader_min_confidence:
                 self.hold_evidence_ns = 0.0
@@ -230,28 +223,6 @@ class ModeEngine:
         self.on_token(tok)
         return True
 
-    def on_swipe(self, ev: SwipeEvent) -> None:
-        """Per-frame motion input: while ARMED, a swipe with a bound shape fires `<shape>_swipe_<dir>`."""
-        if self.state != ARMED:
-            return
-        action = self.bindings.lookup(self.namespace or self.default_namespace, f"{ev.shape}_swipe_{ev.direction.value}")
-        if action is None:
-            return
-        last = self._last_swipe
-        if last is not None and last[1] != ev.direction.value and ev.t_ns - last[0] < self.timing.swipe_return_ignore_ns:
-            # the hand coming back after a swipe, not a new command
-            self._deadline_ns = ev.t_ns + self.timing.swipe_chain_window_ns
-            return
-        if action.arg("repeat") in ("true", "True", "1"):
-            # chain: stay armed so the next flick fires without a new palm
-            self._deadline_ns = ev.t_ns + self.timing.swipe_chain_window_ns
-            self.repeat_count += 1
-            self._last_swipe = (ev.t_ns, ev.direction.value)
-            self.bus.publish(ModeChanged(ev.t_ns, ARMED, ARMED, self.namespace, self._deadline_ns))
-        else:
-            self._go(IDLE, ev.t_ns)
-        self.fire(action, ev.t_ns)
-
     def on_hand_lost(self, t_ns: int) -> None:
         if self._lost_since_ns is None:
             self._lost_since_ns = t_ns
@@ -300,7 +271,6 @@ class ModeEngine:
             self._fire_gesture, self._fire_mass = None, 0.0
             self._hold_rate = 0.0
             self._repeat_action, self._repeat_gesture, self.repeat_count = None, None, 0
-            self._last_swipe = None
         self.bus.publish(
             ModeChanged(t_ns=t_ns, old=old, new=new, namespace=self.namespace, deadline_ns=self._deadline_ns)
         )

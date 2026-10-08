@@ -319,10 +319,8 @@ Findings on the 2026-10-08 recordings (10,828 session frames + 9,786 dataset fra
   command. Sessions: arms 49 → 54, breaks 17 → 10, fires 21 → 25, drags 3 → 6; no
   change in false arms/fires on "none" data. Unbound or unsure gestures still only
   pause the hold, so the safety of the leader is intact.
-- Swipe shapes: three fingers fires 100 % up to noise 0.012 and ±30° rotation; the
-  blade degrades sharply above noise 0.006 (its thresholds are small absolute
-  distances) and MediaPipe tracks edge-on hands poorly in practice. Three fingers is
-  the recommended shape; both stay bound for a live comparison.
+- Swipe shapes (three fingers, blade) were tried and moved to the `swipe-desktops`
+  branch on 2026-10-08: buggy and unintuitive in live use. Slide-to-repeat stayed.
 
 Distance: by default the pointer maps the camera frame directly, so drag speed
 follows hand distance (farther = slower per centimetre), which the user prefers.

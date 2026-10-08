@@ -27,8 +27,6 @@ class TimingConfig:
     quick_command_min_confidence: float = 0.85
     drag_lost_grace_s: float = 2.5  # hand lost mid-drag: window stays and waits this long for the hand
     repeat_window_s: float = 1.5  # after a repeatable action, a sideways slide of the same shape fires it again within this
-    swipe_chain_window_s: float = 2.5  # after a swipe, stay armed this long for the next flick
-    swipe_return_ignore_s: float = 0.7  # a reverse stroke this soon after a swipe is just the hand coming back
     repeat_slide: float = 0.10  # the slide: wrist must move this fraction of the frame width sideways
 
     def to_timing(self) -> Timing:
@@ -46,8 +44,6 @@ class TimingConfig:
             quick_command_min_confidence=self.quick_command_min_confidence,
             repeat_window_ns=int(self.repeat_window_s * s),
             repeat_slide=self.repeat_slide,
-            swipe_chain_window_ns=int(self.swipe_chain_window_s * s),
-            swipe_return_ignore_ns=int(self.swipe_return_ignore_s * s),
         )
 
 
@@ -111,15 +107,6 @@ class DragConfig:
 
 
 @dataclass
-class SwipeConfig:
-    enabled: bool = True
-    min_travel: float = 0.18  # fraction of frame width within the window
-    min_speed: float = 1.2  # peak speed, frame widths per second (haste)
-    window_ms: int = 350
-    cooldown_ms: int = 450
-
-
-@dataclass
 class NamespaceConfig:
     leader: str = "open_palm"
     bindings: list[dict[str, Any]] = field(default_factory=list)
@@ -132,7 +119,6 @@ class Config:
     camera: CameraConfig = field(default_factory=CameraConfig)
     recognizer: RecognizerConfig = field(default_factory=RecognizerConfig)
     drag: DragConfig = field(default_factory=DragConfig)
-    swipe: SwipeConfig = field(default_factory=SwipeConfig)
     namespaces: dict[str, NamespaceConfig] = field(default_factory=dict)
 
     def bindings(self) -> Bindings:
@@ -148,12 +134,6 @@ DEFAULT_BINDINGS: list[dict[str, Any]] = [
     {"gesture": "h_right", "action": {"kind": "key", "name": "Cmd+Shift+Tab", "chord": "cmd+shift+tab"}},
     {"gesture": "point_up", "action": {"kind": "key", "name": "Previous tab", "chord": "cmd+shift+[", "repeat": True}},
     {"gesture": "two_up", "action": {"kind": "key", "name": "Next tab", "chord": "cmd+shift+]", "repeat": True}},
-    # three fingers up, then a fast sideways swipe: the hand points where you go (swipe left = desktop to the left)
-    {"gesture": "three_up_swipe_left", "action": {"kind": "key", "name": "Desktop left", "chord": "ctrl+left", "repeat": True}},
-    {"gesture": "three_up_swipe_right", "action": {"kind": "key", "name": "Desktop right", "chord": "ctrl+right", "repeat": True}},
-    # same with the blade (fingers together, edge-on), for a head-to-head on robustness
-    {"gesture": "blade_swipe_left", "action": {"kind": "key", "name": "Desktop left", "chord": "ctrl+left", "repeat": True}},
-    {"gesture": "blade_swipe_right", "action": {"kind": "key", "name": "Desktop right", "chord": "ctrl+right", "repeat": True}},
 ]
 
 
@@ -186,7 +166,6 @@ def load_config(path: Path | None) -> Config:
     _merge(cfg.camera, data.get("camera", {}))
     _merge(cfg.recognizer, data.get("recognizer", {}))
     _merge(cfg.drag, data.get("drag", {}))
-    _merge(cfg.swipe, data.get("swipe", {}))
     if "namespaces" in data:
         # User bindings override defaults per gesture; default bindings the file does not
         # mention are kept, so a config saved before a gesture existed still gets it.

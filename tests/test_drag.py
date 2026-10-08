@@ -135,6 +135,15 @@ def test_drag_times_out_nothing_the_armed_deadline_does_not_apply():
     assert eng.state == DRAGGING
 
 
+def test_fist_mid_drag_drops_in_place():
+    eng, wins, modes, drags = make_engine()
+    arm(eng)
+    eng.on_pinch(pev(PinchPhase.START, int(1.2 * S), 0.5, 0.35))
+    eng.on_pinch(pev(PinchPhase.MOVE, int(1.3 * S), 0.6, 0.35))
+    eng.on_token(Token(int(1.4 * S), "fist", 0.9, Hand.RIGHT, True))
+    assert eng.state == IDLE and drags[-1].phase is DragPhase.END and round(wins.windows[0]["x"]) == 400
+
+
 def test_engine_without_drag_controller_ignores_pinches():
     eng = ModeEngine(Bus(), Bindings(), Timing(), fire=lambda a, t: None)
     eng.on_pinch(pev(PinchPhase.START, 0, 0.5, 0.5))

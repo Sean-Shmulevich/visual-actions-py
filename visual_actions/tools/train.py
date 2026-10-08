@@ -19,7 +19,7 @@ from ..core.recorder import read_session
 from ..core.types import HandFrame
 from ..paths import datasets_dir, models_dir
 
-EXCLUDE = {"no_pinch"}  # derived from the other classes by import_public; not a gesture
+EXCLUDE = {"no_pinch", "three_up", "blade"}  # swipe shapes live on the swipe-desktops branch  # derived from the other classes by import_public; not a gesture
 
 
 def load(datasets: Path, mirror: bool = True, exclude: set[str] = EXCLUDE) -> tuple[np.ndarray, np.ndarray, np.ndarray]:

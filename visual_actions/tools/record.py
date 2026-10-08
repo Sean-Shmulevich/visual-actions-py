@@ -31,8 +31,6 @@ GUIDED = [
     ("h_right", "Same H sign, but pointing to your right."),
     ("point_up", "One finger: index pointing straight up, the rest folded, thumb tucked."),
     ("two_up", "Two fingers: index and middle together pointing straight up, the rest folded."),
-    ("three_up", "Three fingers: index, middle and ring up, pinky folded, thumb tucked. Then swipe it left and right a few times."),
-    ("blade", "Blade: fingers straight and together, palm facing sideways like a karate chop. Then swipe it left and right a few times."),
     ("none", "Anything else: relax the hand, wave, scratch your head, rest it on the desk, use both hands."),
 ]
 

@@ -129,7 +129,7 @@ def test_timeout_without_command():
 def test_unbound_gesture_keeps_window_open():
     eng, fired, _, _ = make()
     arm(eng)
-    eng.on_token(tok("fist", int(2.3 * S)))
+    eng.on_token(tok("point_up", int(2.3 * S)))
     eng.on_token(tok("none", int(2.6 * S)))
     assert eng.state == ARMED and not fired
 
@@ -169,21 +169,30 @@ def test_switching_gesture_restarts_evidence():
     assert fired[0][0].name == "Cmd+Shift+Tab"
 
 
-def test_bound_fist_is_a_command_not_an_escape():
+def test_bound_fist_still_cancels():
     eng, fired, _, _ = make()
-    eng.bindings.add(Binding("window", "fist", Action(ActionKind.KEY, "App Exposé")))
+    eng.bindings.add(Binding("window", "fist", Action(ActionKind.KEY, "App Expos\u00e9")))
     arm(eng)
     eng.on_token(tok("fist", int(2.3 * S)))
-    assert fired and fired[0][0].name == "App Exposé" and eng.state == IDLE
+    assert not fired and eng.state == IDLE
 
 
-def test_escape_by_fist_held_one_second():
+def test_fist_cancels_immediately_in_any_state():
     eng, fired, _, _ = make()
     arm(eng)
     eng.on_token(tok("fist", int(2.2 * S)))
-    assert eng.state == ARMED
-    eng.on_token(tok("fist", int(3.3 * S)))
     assert eng.state == IDLE and not fired
+    eng.on_token(tok("open_palm", int(3.0 * S)))
+    assert eng.state == HOLDING
+    eng.on_token(tok("fist", int(3.25 * S), conf=0.7))
+    assert eng.state == IDLE
+
+
+def test_weak_fist_does_not_cancel():
+    eng, fired, _, _ = make()
+    arm(eng)
+    eng.on_token(tok("fist", int(2.2 * S), conf=0.4))
+    assert eng.state == ARMED
 
 
 def test_escape_by_hand_lost():

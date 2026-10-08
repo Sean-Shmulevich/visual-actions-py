@@ -1,7 +1,6 @@
 """Headless robustness evaluation.
 
     uv run python -m visual_actions.tools.evaluate leader     # palm start / arm / false-start stats on every dataset and session
-    uv run python -m visual_actions.tools.evaluate swipe      # three_up vs blade swipe fire rate under noise and rotation (synthetic)
 
 `leader` replays every recorded JSONL (datasets/<class>/* and sessions/*/landmarks.jsonl)
 through the real pipeline with mock automation and counts mode transitions:
@@ -13,18 +12,14 @@ On a non-palm class, every start is a false start and every arm a false arm.
 from __future__ import annotations
 
 import argparse
-import math
-import random
-from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from ..core.config import Config, default_config
-from ..core.recorder import Recorder, read_session
-from ..core.types import WRIST, HandFrame, Landmark
+from ..core.recorder import read_session
+from ..core.types import HandFrame
 from ..paths import datasets_dir, sessions_dir
 from .replay import replay_full
-from .synth import hand_frame
 
 
 @dataclass
@@ -95,69 +90,9 @@ def print_leader(stats: dict[str, LeaderStats]) -> None:
         print(f"palm data: {palm.arms}/{palm.starts} starts reached armed ({100 * palm.arms / palm.starts:.0f}%), {palm.breaks} breaks")
 
 
-# -- swipe robustness (synthetic) -------------------------------------------------------
-
-
-def _rotate(hf: HandFrame, deg: float) -> HandFrame:
-    """Rotate landmarks about the wrist in the image plane (user frame)."""
-    a = math.radians(deg)
-    w = hf.landmarks[WRIST]
-    out = []
-    for lm in hf.landmarks:
-        dx, dy = lm.x - w.x, lm.y - w.y
-        out.append(Landmark(w.x + dx * math.cos(a) - dy * math.sin(a), w.y + dx * math.sin(a) + dy * math.cos(a), lm.z))
-    return HandFrame(hf.t_ns, hf.hand, tuple(out), hf.confidence)
-
-
-def write_swipe_session(path: Path, shape: str, noise: float, rot_deg: float, direction: int, rng: random.Random) -> None:
-    rec = Recorder(path)
-    t = 0.0
-    for _ in range(45):  # palm 1.5 s
-        rec.write(hand_frame("open_palm", int(t * 1e9), center=(0.5, 0.5), jitter=0.0005, rng=rng))
-        t += 1 / 30
-    for _ in range(12):  # shape forms and holds 0.4 s
-        hf = hand_frame(shape, int(t * 1e9), center=(0.5, 0.5), jitter=noise, rng=rng, mirror_to_raw=False)
-        rec.write(_mirror(_rotate(hf, rng.uniform(-rot_deg, rot_deg))))
-        t += 1 / 30
-    for i in range(7):  # the stroke: 0.3 of the frame in ~230 ms
-        x = 0.5 + direction * 0.3 * i / 6
-        hf = hand_frame(shape, int(t * 1e9), center=(x, 0.5), jitter=noise, rng=rng, mirror_to_raw=False)
-        rec.write(_mirror(_rotate(hf, rng.uniform(-rot_deg, rot_deg))))
-        t += 1 / 30
-    rec.write_lost(int(t * 1e9))
-    rec.close()
-
-
-def _mirror(hf: HandFrame) -> HandFrame:
-    return HandFrame(hf.t_ns, hf.hand, tuple(Landmark(1.0 - lm.x, lm.y, lm.z) for lm in hf.landmarks), hf.confidence)
-
-
-def run_swipe(cfg: Config, tmp: Path, trials: int = 30, seed: int = 0) -> None:
-    rng = random.Random(seed)
-    cfg.recognizer.model = None  # rules only: the model has no blade data yet; this compares the shapes' geometry
-    print(f"{'shape':9s} {'noise':>6s} {'rot':>5s}  {'fired':>6s} {'wrong-dir':>9s} {'none':>5s}")
-    for shape in ("three_up", "blade"):
-        for noise in (0.002, 0.006, 0.012):
-            for rot in (0.0, 15.0, 30.0):
-                counts: Counter[str] = Counter()
-                for i in range(trials):
-                    direction = 1 if i % 2 else -1
-                    p = tmp / f"{shape}_{i}.jsonl"
-                    write_swipe_session(p, shape, noise, rot, direction, rng)
-                    r = replay_full(p, cfg, tail_s=0.3)
-                    if not r.fired:
-                        counts["none"] += 1
-                    else:
-                        want = "Desktop right" if direction > 0 else "Desktop left"  # user-right swipe -> "Desktop left"? see note
-                        # swipe to the user's right = direction RIGHT -> binding *_swipe_right -> "Desktop left"
-                        want = "Desktop right" if direction > 0 else "Desktop left"
-                        counts["fired" if r.fired[0].action.name == want else "wrong-dir"] += 1
-                print(f"{shape:9s} {noise:6.3f} {rot:5.0f}  {counts['fired']:6d} {counts['wrong-dir']:9d} {counts['none']:5d}")
-
-
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("what", choices=["leader", "swipe"])
+    ap.add_argument("what", choices=["leader"])
     ap.add_argument("--datasets", type=Path, default=datasets_dir())
     ap.add_argument("--sessions", type=Path, default=sessions_dir())
     ap.add_argument("--public", action="store_true", help="include public/synthetic dataset files")
@@ -170,13 +105,7 @@ def main() -> int:
     trained = args.model or (models_dir() / "gestures.joblib")
     if trained.exists():
         cfg.recognizer.model = str(trained)
-    if args.what == "leader":
-        print_leader(run_leader(cfg, args.datasets, args.sessions, args.public))
-    else:
-        import tempfile
-
-        with tempfile.TemporaryDirectory() as d:
-            run_swipe(cfg, Path(d), trials=args.trials)
+    print_leader(run_leader(cfg, args.datasets, args.sessions, args.public))
     return 0
 
 
