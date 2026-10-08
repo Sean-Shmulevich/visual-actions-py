@@ -86,8 +86,8 @@ class Pipeline:
 def _screen_size(mover: object) -> tuple[int, int]:
     size = getattr(mover, "screen_size", None)
     if callable(size):
-        w, h = size()
-        return int(w), int(h)
+        result: tuple[int, int] = tuple(int(v) for v in size())  # type: ignore[assignment]
+        return result
     return (1440, 900)
 
 
