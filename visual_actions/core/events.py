@@ -25,6 +25,8 @@ class HandSeen:
 @dataclass(frozen=True)
 class HandLost:
     t_ns: int
+    reason: str = ""  # gate | tracker | edge
+    detail: str = ""  # e.g. landmark bounds at the moment of loss
 
 
 @dataclass(frozen=True)

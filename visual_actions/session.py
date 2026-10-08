@@ -22,7 +22,15 @@ from pathlib import Path
 from typing import Any
 
 from .core.drag import DragEvent, DragPhase
-from .core.events import ActionFired, Bus, ModeChanged, SnapPreview, TokenEmitted
+from .core.events import (
+    ActionFired,
+    Bus,
+    HandLost,
+    HandSeen,
+    ModeChanged,
+    SnapPreview,
+    TokenEmitted,
+)
 from .core.recorder import Recorder
 from .core.types import HandFrame
 
@@ -53,8 +61,12 @@ class SessionRecorder:
             bus.subscribe(ActionFired, self._on_action)
             bus.subscribe(DragEvent, self._on_drag)
             bus.subscribe(SnapPreview, self._on_snap)
+            bus.subscribe(HandLost, self._on_hand_lost)
+            bus.subscribe(HandSeen, self._on_hand_seen)
             if log_tokens:
                 bus.subscribe(TokenEmitted, self._on_token)
+        self._hand_present = False
+        self._lost_at_ns: int | None = None
 
     # -- capture thread -----------------------------------------------------------
 
@@ -113,6 +125,18 @@ class SessionRecorder:
             return
         extra = f" snapped={ev.snapped}" if ev.snapped else ""
         self.log("drag", f"{ev.phase.value} {ev.window} @({ev.x:.0f},{ev.y:.0f}){extra}", ev.t_ns)
+
+    def _on_hand_lost(self, ev: HandLost) -> None:
+        self._hand_present = False
+        self._lost_at_ns = ev.t_ns
+        self.log("hand", f"lost [{ev.reason}] {ev.detail} (mode {self.mode})", ev.t_ns)
+
+    def _on_hand_seen(self, ev: HandSeen) -> None:
+        if not self._hand_present:
+            gap = f" after {(ev.hand_frame.t_ns - self._lost_at_ns) / 1e9:.2f}s away" if self._lost_at_ns else ""
+            hf = ev.hand_frame
+            self.log("hand", f"seen{gap} conf={hf.confidence:.2f} wrist=({hf.landmarks[0].x:.2f},{hf.landmarks[0].y:.2f}) (mode {self.mode})", hf.t_ns)
+        self._hand_present = True
 
     def _on_snap(self, ev: SnapPreview) -> None:
         self.log("snap", f"preview {ev.zone}" if ev.zone else "preview cleared", ev.t_ns)

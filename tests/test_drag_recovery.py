@@ -75,12 +75,24 @@ def test_grace_expiry_drops_in_place():
     assert round(wins.windows[0]["x"]) == 400
 
 
-def test_hand_back_open_drops_in_place():
+def test_hand_back_open_drops_after_the_resume_grace():
     eng, wins, modes, drags = make()
     eng.on_hand_lost(int(1.4 * S))
-    eng.on_token(Token(int(1.9 * S), "open_palm", 1.0, Hand.RIGHT, True))  # back, not pinching
+    eng.on_token(Token(int(1.9 * S), "none", 0.6, Hand.RIGHT, True))  # back, pinch not recognised yet
+    assert eng.state == DRAGGING  # given a moment
+    eng.on_token(Token(int(2.15 * S), "none", 0.6, Hand.RIGHT, True))
+    assert eng.state == DRAGGING
+    eng.on_token(Token(int(2.6 * S), "open_palm", 1.0, Hand.RIGHT, True))  # 0.7 s later, still no pinch: drop
     assert eng.state == IDLE and drags[-1].phase is DragPhase.END
     assert round(wins.windows[0]["x"]) == 400
+
+
+def test_hand_back_then_pinch_within_grace_resumes():
+    eng, wins, modes, drags = make()
+    eng.on_hand_lost(int(1.4 * S))
+    eng.on_token(Token(int(1.9 * S), "none", 0.6, Hand.RIGHT, True))
+    eng.on_pinch(pev(PinchPhase.START, int(2.2 * S), 0.2, 0.8))
+    assert eng.state == DRAGGING and not eng.drag.suspended and drags[-1].phase is DragPhase.RESUME
 
 
 def test_pipeline_gap_in_the_middle_of_a_drag_resumes(tmp_path: Path):

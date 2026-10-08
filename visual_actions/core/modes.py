@@ -54,6 +54,7 @@ class Timing:
     hold_break_tokens: int = 2  # consecutive non-palm tokens tolerated during a hold (classifier flicker)
     quick_command_min_hold_ns: int = 300_000_000  # a clear palm this long, then a confident bound gesture, arms + fires at once
     quick_command_min_confidence: float = 0.85
+    resume_grace_ns: int = 600_000_000  # hand back mid-suspension: wait this long for the pinch before dropping
     repeat_slide: float = 0.10  # sideways wrist travel (fraction of frame width) that counts as a slide
     leader_min_confidence: float = 0.8  # palm tokens below this neither start nor fill the hold
 
@@ -95,6 +96,7 @@ class ModeEngine:
         self._fire_mass: float = 0.0
         self._hold_rate: float = 0.0
         self._hold_misses = 0
+        self._returned_at_ns: int | None = None  # first token after the hand came back mid-suspension
         self._repeat_action: Action | None = None
         self._repeat_gesture: str | None = None
         self._repeat_anchor_x: float = 0.5
@@ -118,9 +120,12 @@ class ModeEngine:
             return
         if self.state == DRAGGING:
             if self.drag is not None and self.drag.suspended:
-                # the hand is back but not pinching: drop where the window is
-                self.drag.cancel(tok.t_ns)
-                self._go(IDLE, tok.t_ns)
+                # the hand is back: give the pinch detector a moment before deciding it let go
+                if self._returned_at_ns is None:
+                    self._returned_at_ns = tok.t_ns
+                elif tok.t_ns - self._returned_at_ns >= self.timing.resume_grace_ns:
+                    self.drag.cancel(tok.t_ns)
+                    self._go(IDLE, tok.t_ns)
             return  # per-frame pinch events own this state; tokens are ignored
         if self.state == IDLE:
             if tok.name == OPEN_PALM and tok.still and tok.confidence >= self.timing.leader_min_confidence:
@@ -201,6 +206,8 @@ class ModeEngine:
                 self.drag.cancel(ev.t_ns)  # came back and let go: drop
                 self._go(IDLE, ev.t_ns)
                 return
+            if self.drag.suspended:
+                self._returned_at_ns = None  # pinch is back: resume
             self.drag.on_pinch(ev)
             if ev.phase is PinchPhase.END:
                 self._go(IDLE, ev.t_ns)
@@ -228,6 +235,7 @@ class ModeEngine:
             self._lost_since_ns = t_ns
         self._fist_since_ns = None
         if self.state == DRAGGING and self.drag is not None:
+            self._returned_at_ns = None
             self.drag.suspend(t_ns)  # window stays; the drag resumes if the hand returns pinching
 
     def on_tick(self, t_ns: int) -> None:
@@ -271,6 +279,7 @@ class ModeEngine:
             self._fire_gesture, self._fire_mass = None, 0.0
             self._hold_rate = 0.0
             self._repeat_action, self._repeat_gesture, self.repeat_count = None, None, 0
+            self._returned_at_ns = None
         self.bus.publish(
             ModeChanged(t_ns=t_ns, old=old, new=new, namespace=self.namespace, deadline_ns=self._deadline_ns)
         )
