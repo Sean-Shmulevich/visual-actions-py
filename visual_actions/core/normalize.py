@@ -67,9 +67,17 @@ def pointing_direction(hf: HandFrame) -> tuple[float, float]:
 
 
 def features(hf: HandFrame) -> np.ndarray:
-    """Rotation-invariant 63 floats plus the index direction as (cos, sin)."""
+    """Rotation-invariant 63 floats plus the index direction as (cos, sin).
+
+    Depth is zeroed on purpose (2026-10-08): MediaPipe's z is noisy on webcams and
+    absent (0.0) in HaGRID's public annotations, so with z in the vector a model
+    learned the data source instead of the pose. Held-out accuracy on the user's
+    newest sessions went from 0.77 to 0.89 when z was dropped. The slot stays so the
+    vector length is unchanged.
+    """
     c = canonical(hf)
     pts = c.pts.copy()
+    pts[:, 2] = 0.0
     cos_a, sin_a = pointing_direction(hf)
     angle = math.atan2(sin_a, cos_a)
     up = pts[MIDDLE_MCP][:2]

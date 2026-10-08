@@ -75,14 +75,17 @@ def main() -> int:
     sessions_per_class: dict[str, list[str]] = {}
     for grp in sorted(set(g)):
         sessions_per_class.setdefault(grp.split("/")[0], []).append(grp)
-    if all(len(s) >= 2 for s in sessions_per_class.values()):
-        test_groups = {s[-1] for s in sessions_per_class.values()}
+    # Public datasets only ever train; the test set is each class's newest USER session.
+    user_sessions = {c: [g for g in s if "/public-" not in g and "/synth" not in g] for c, s in sessions_per_class.items()}
+    testable = {c: s for c, s in user_sessions.items() if len(s) >= 1 and len(sessions_per_class[c]) >= 2}
+    if testable:
+        test_groups = {s[-1] for s in testable.values()}
         te = np.array([grp in test_groups for grp in g])
         tr = ~te
         m = build().fit(x[tr], y[tr])
         pred = m.predict(x[te])
         labels = sorted(set(y))
-        print("held-out by session:")
+        print(f"held-out = newest user session of {sorted(testable)} (public/synth files train only):")
         print(classification_report(y[te], pred, labels=labels, zero_division=0))  # pyright: ignore[reportArgumentType]
         print("confusion (rows=true, cols=pred):", labels)
         print(confusion_matrix(y[te], pred, labels=labels))
