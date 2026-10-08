@@ -90,7 +90,7 @@ class VisualActionsApp(rumps.App):
             from ..paths import sessions_dir
 
             self.session = SessionRecorder(sessions_dir(), self.bus)
-        self.capture = CaptureThread(self.services.camera, self.q, use_gate=self.use_gate, sink=self.session)
+        self.capture = CaptureThread(self.services.camera, self.q, use_gate=self.use_gate, sink=self.session, face_veto=self.cfg.leader.face_veto)
         self.capture.start()
         self.toggle_item.title = "Stop"
 

@@ -9,3 +9,4 @@ datasets/
 dist/
 build/
 .DS_Store
+models/*.tflite

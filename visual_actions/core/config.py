@@ -81,6 +81,18 @@ class RecognizerConfig:
 
 
 @dataclass
+class LeaderConfig:
+    """Face-touch veto: a hand resting on a face reads as an open palm. Measured on the
+    2026-10-08 sessions: hands on the cheek/chin sit 70-77 % inside the face box with a
+    finger-tip spread of 0.34-0.52; deliberate palms beside or in front of the face stay
+    under 32 % overlap or keep a spread above 0.6."""
+
+    face_veto: bool = True
+    face_overlap: float = 0.5  # hand box fraction inside a face box
+    face_spread: float = 0.6  # index-tip to pinky-tip distance in hand units; below this the palm is vetoed
+
+
+@dataclass
 class DragConfig:
     enabled: bool = True
     pinch_on: float = 0.3  # canonical thumb-index distance to start a pinch
@@ -121,6 +133,7 @@ class Config:
     camera: CameraConfig = field(default_factory=CameraConfig)
     recognizer: RecognizerConfig = field(default_factory=RecognizerConfig)
     drag: DragConfig = field(default_factory=DragConfig)
+    leader: LeaderConfig = field(default_factory=LeaderConfig)
     namespaces: dict[str, NamespaceConfig] = field(default_factory=dict)
 
     def bindings(self) -> Bindings:
@@ -168,6 +181,7 @@ def load_config(path: Path | None) -> Config:
     _merge(cfg.camera, data.get("camera", {}))
     _merge(cfg.recognizer, data.get("recognizer", {}))
     _merge(cfg.drag, data.get("drag", {}))
+    _merge(cfg.leader, data.get("leader", {}))
     if "namespaces" in data:
         # User bindings override defaults per gesture; default bindings the file does not
         # mention are kept, so a config saved before a gesture existed still gets it.

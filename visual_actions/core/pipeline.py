@@ -7,12 +7,21 @@ from .bindings import Bindings
 from .config import Config
 from .dispatcher import Dispatcher
 from .drag import DragController, WindowMover
-from .events import Bus, HandLost, HandSeen, PointerMoved, Tick, TokenEmitted
+from .events import Bus, HandLost, HandSeen, PalmVetoed, PointerMoved, Tick, TokenEmitted
 from .modes import ARMED, DRAGGING, ModeEngine
 from .normalize import to_user_frame
 from .pinch import PinchDetector
 from .pointer import PointerMap, ReachBox, SmoothedPointer
-from .recognizer import CompositeRecognizer, Recognizer, RuleRecognizer, SklearnRecognizer, Smoother
+from .recognizer import (
+    NONE,
+    OPEN_PALM,
+    CompositeRecognizer,
+    Recognizer,
+    RuleRecognizer,
+    SklearnRecognizer,
+    Smoother,
+    tip_spread,
+)
 from .snap import SnapEngine, SnapRules
 from .types import Action
 
@@ -69,6 +78,7 @@ class Pipeline:
             min_token_confidence=config.recognizer.min_token_confidence,
             drag=self.drag,
         )
+        self._last_veto_ns = -(10**18)
         bus.subscribe(HandSeen, self._on_hand_seen)
         bus.subscribe(HandLost, self._on_hand_lost)
         bus.subscribe(Tick, self._on_tick)
@@ -89,6 +99,11 @@ class Pipeline:
                 cx, cy = self.drag.pointer.pmap.to_screen(px, py, hand_scale(hf))
                 self.bus.publish(PointerMoved(hf.t_ns, cx, cy, self.engine.state == DRAGGING))
         name, conf = self.recognizer.classify(hf)
+        if name == OPEN_PALM and palm_vetoed(hf, ev.face_overlap, self.config):
+            name, conf = NONE, 0.5  # a hand on a face is not a leader
+            if hf.t_ns - self._last_veto_ns >= 500_000_000:
+                self._last_veto_ns = hf.t_ns
+                self.bus.publish(PalmVetoed(hf.t_ns, ev.face_overlap, tip_spread(hf)))
         tok = self.smoother.push(hf, name, conf)
         if tok is not None:
             self.bus.publish(TokenEmitted(tok))
@@ -101,6 +116,12 @@ class Pipeline:
 
     def _on_tick(self, ev: Tick) -> None:
         self.engine.on_tick(ev.t_ns)
+
+
+def palm_vetoed(hf, face_overlap: float, config: Config) -> bool:
+    """Face-touch veto: the hand box is mostly inside a face box AND the fingers are not spread."""
+    lc = config.leader
+    return lc.face_veto and face_overlap >= lc.face_overlap and tip_spread(hf) < lc.face_spread
 
 
 def _visible_frame(mover: object, sw: int, sh: int) -> Rect:

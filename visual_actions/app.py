@@ -37,7 +37,7 @@ def run_live(cfg: Config, dry_run: bool, use_gate: bool = True, verbose: bool = 
 
         session = SessionRecorder(sessions_dir(), bus)
         print(f"recording session to {session.dir}")
-    capture = CaptureThread(services.camera, q, use_gate=use_gate, sink=session)
+    capture = CaptureThread(services.camera, q, use_gate=use_gate, sink=session, face_veto=cfg.leader.face_veto)
     if cfg.feedback.dashboard:
         from .ui.dashboard import Dashboard
 

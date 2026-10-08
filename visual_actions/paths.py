@@ -34,6 +34,13 @@ def actions_dir() -> Path:
     return data_dir() / "actions"
 
 
+def face_model_path() -> Path | None:
+    for candidate in (models_dir() / "blaze_face_short_range.tflite", REPO_ROOT / "models" / "blaze_face_short_range.tflite"):
+        if candidate.exists():
+            return candidate
+    return None
+
+
 def model_path() -> Path:
     """The MediaPipe landmarker bundle: user data dir first, then the repo's models/."""
     for candidate in (models_dir() / "hand_landmarker.task", REPO_ROOT / "models" / "hand_landmarker.task"):

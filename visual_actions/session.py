@@ -28,6 +28,7 @@ from .core.events import (
     HandLost,
     HandSeen,
     ModeChanged,
+    PalmVetoed,
     SnapPreview,
     TokenEmitted,
 )
@@ -63,6 +64,7 @@ class SessionRecorder:
             bus.subscribe(SnapPreview, self._on_snap)
             bus.subscribe(HandLost, self._on_hand_lost)
             bus.subscribe(HandSeen, self._on_hand_seen)
+            bus.subscribe(PalmVetoed, lambda e: self.log("veto", f"palm on face: overlap={e.overlap:.2f} spread={e.spread:.2f}", e.t_ns))
             if log_tokens:
                 bus.subscribe(TokenEmitted, self._on_token)
         self._hand_present = False

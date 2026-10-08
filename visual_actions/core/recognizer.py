@@ -45,6 +45,12 @@ FINGERS = (
 )
 
 
+def tip_spread(hf: HandFrame) -> float:
+    """Index-tip to pinky-tip distance in canonical hand units (~0.6-1.0 for a spread palm)."""
+    c = canonical(hf)
+    return float(np.linalg.norm(c.pts[INDEX_TIP][:2] - c.pts[PINKY_TIP][:2]))
+
+
 class Recognizer(Protocol):
     def classify(self, hf: HandFrame) -> tuple[str, float]: ...
 

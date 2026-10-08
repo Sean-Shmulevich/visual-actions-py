@@ -15,6 +15,11 @@ uv run pytest
 uv run python -m visual_actions --replay tests/fixtures/h_left.jsonl
 ```
 
+Models (not in git): `models/hand_landmarker.task` (MediaPipe hand landmarker) and
+`models/blaze_face_short_range.tflite` (MediaPipe face detector, used by the face-touch veto so a
+hand resting on your face is not read as the open-palm leader). Download both from
+`https://storage.googleapis.com/mediapipe-models/`; without the face model the veto is off.
+
 Every start/stop records a session under `~/Library/Application Support/visual-actions/sessions/<stamp>/`:
 `video.mp4` (camera, elapsed time and mode burned in), `events.log` (timestamped modes, tokens, actions
 with results, drags and snaps), and `landmarks.jsonl` (raw hand frames, same format as the datasets, so

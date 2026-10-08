@@ -20,6 +20,16 @@ class FrameCaptured:
 @dataclass(frozen=True)
 class HandSeen:
     hand_frame: HandFrame
+    face_overlap: float = 0.0  # fraction of the hand box inside a face box (0 when no face detection)
+
+
+@dataclass(frozen=True)
+class PalmVetoed:
+    """An open palm was ignored because the hand is on a face (face-touch veto)."""
+
+    t_ns: int
+    overlap: float
+    spread: float
 
 
 @dataclass(frozen=True)

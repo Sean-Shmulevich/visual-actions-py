@@ -10,13 +10,15 @@ from ..core.events import HandLost, HandSeen
 from ..core.gate import AlwaysOpenGate, HandGate, MotionGate
 from ..core.presence import PresenceFilter
 from ..core.tracker import MediaPipeTracker
-from ..paths import model_path
+from ..paths import face_model_path, model_path
+from .face import FaceTracker, hand_face_overlap
 
 
 class CaptureThread:
     out_of_frame = staticmethod(PresenceFilter.out_of_frame)  # kept for callers/tests
 
-    def __init__(self, camera: CameraSource, q: queue.Queue, use_gate: bool = True, sink: object | None = None) -> None:
+    def __init__(self, camera: CameraSource, q: queue.Queue, use_gate: bool = True, sink: object | None = None, face_veto: bool = True) -> None:
+        self.face_veto = face_veto
         self.camera = camera
         self.q = q
         self.sink = sink  # SessionRecorder-like: write_frame / write_hand / write_lost
@@ -40,6 +42,7 @@ class CaptureThread:
 
     def _run(self) -> None:
         tracker = None
+        faces = FaceTracker(face_model_path() if self.face_veto else None)
         try:
             tracker = MediaPipeTracker(model_path())
             self.camera.open()
@@ -61,7 +64,8 @@ class CaptureThread:
                 pr = self.presence.update(hands[0] if hands else None, self.frames)
                 self.gate.notify(t_ns, pr.seen is not None)
                 if pr.seen is not None:
-                    self._put(HandSeen(pr.seen))
+                    overlap = hand_face_overlap(pr.seen, faces.update(frame)) if faces.enabled else 0.0
+                    self._put(HandSeen(pr.seen, overlap))
                     if self.sink is not None:
                         self.sink.write_hand(pr.seen)
                 elif pr.lost:
@@ -70,6 +74,7 @@ class CaptureThread:
             self.error = f"{type(exc).__name__}: {exc}"
         finally:
             self.camera.close()
+            faces.close()
             if tracker is not None:
                 tracker.close()
 
