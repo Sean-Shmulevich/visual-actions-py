@@ -96,6 +96,15 @@ class DragConfig:
 
 
 @dataclass
+class SwipeConfig:
+    enabled: bool = True
+    min_travel: float = 0.18  # fraction of frame width within the window
+    min_speed: float = 1.2  # peak speed, frame widths per second (haste)
+    window_ms: int = 350
+    cooldown_ms: int = 450
+
+
+@dataclass
 class NamespaceConfig:
     leader: str = "open_palm"
     bindings: list[dict[str, Any]] = field(default_factory=list)
@@ -108,6 +117,7 @@ class Config:
     camera: CameraConfig = field(default_factory=CameraConfig)
     recognizer: RecognizerConfig = field(default_factory=RecognizerConfig)
     drag: DragConfig = field(default_factory=DragConfig)
+    swipe: SwipeConfig = field(default_factory=SwipeConfig)
     namespaces: dict[str, NamespaceConfig] = field(default_factory=dict)
 
     def bindings(self) -> Bindings:
@@ -123,6 +133,9 @@ DEFAULT_BINDINGS: list[dict[str, Any]] = [
     {"gesture": "h_right", "action": {"kind": "key", "name": "Cmd+Shift+Tab", "chord": "cmd+shift+tab"}},
     {"gesture": "point_up", "action": {"kind": "key", "name": "Previous tab", "chord": "cmd+shift+[", "repeat": True}},
     {"gesture": "two_up", "action": {"kind": "key", "name": "Next tab", "chord": "cmd+shift+]", "repeat": True}},
+    # three fingers up, then a fast sideways swipe: trackpad convention (content follows the hand)
+    {"gesture": "three_up_swipe_left", "action": {"kind": "key", "name": "Desktop right", "chord": "ctrl+right"}},
+    {"gesture": "three_up_swipe_right", "action": {"kind": "key", "name": "Desktop left", "chord": "ctrl+left"}},
 ]
 
 
@@ -155,6 +168,7 @@ def load_config(path: Path | None) -> Config:
     _merge(cfg.camera, data.get("camera", {}))
     _merge(cfg.recognizer, data.get("recognizer", {}))
     _merge(cfg.drag, data.get("drag", {}))
+    _merge(cfg.swipe, data.get("swipe", {}))
     if "namespaces" in data:
         cfg.namespaces = {
             ns: NamespaceConfig(leader=nc.get("leader", "open_palm"), bindings=list(nc.get("bindings", [])))

@@ -56,7 +56,7 @@ CLASS_MAP: dict[str, str] = {
     "call": "none",
     "rock": "none",
     "mute": "none",
-    "three": "none",
+    "three": "three_up",
     "three2": "none",
     "three3": "none",
     "four": "none",

@@ -15,6 +15,7 @@ DRAGGING--pinch END--------------------> IDLE
 DRAGGING--hand lost--------------------> DRAGGING, suspended (window stays, red frame)
 suspended--pinch back within grace-----> DRAGGING resumed from the window's current place
 suspended--hand back unpinched / grace-> IDLE (dropped in place)
+ARMED   --swipe with shape S------------> fire binding "S_swipe_left|right" -> IDLE
 ARMED   --repeatable action fires------> REPEAT(deadline = now + repeat_window)
 REPEAT  --same shape, wrist slid sideways >= repeat_slide--> fire again, deadline refreshed
 REPEAT  --deadline-----------------------> IDLE
@@ -36,6 +37,7 @@ from .drag import DragController
 from .events import Bus, HoldProgress, ModeChanged
 from .pinch import PinchEvent, PinchPhase
 from .recognizer import FIST, OPEN_PALM
+from .swipe import SwipeEvent
 from .types import Action, Token
 
 IDLE, HOLDING, ARMED, DRAGGING, REPEAT = "idle", "holding", "armed", "dragging", "repeat"
@@ -186,6 +188,16 @@ class ModeEngine:
             self.drag.on_pinch(ev)
             if ev.phase is PinchPhase.END:
                 self._go(IDLE, ev.t_ns)
+
+    def on_swipe(self, ev: SwipeEvent) -> None:
+        """Per-frame motion input: while ARMED, a swipe with a bound shape fires `<shape>_swipe_<dir>`."""
+        if self.state != ARMED:
+            return
+        action = self.bindings.lookup(self.namespace or self.default_namespace, f"{ev.shape}_swipe_{ev.direction.value}")
+        if action is None:
+            return
+        self._go(IDLE, ev.t_ns)
+        self.fire(action, ev.t_ns)
 
     def on_hand_lost(self, t_ns: int) -> None:
         if self._lost_since_ns is None:

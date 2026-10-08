@@ -14,6 +14,7 @@ from .pinch import PinchDetector
 from .pointer import PointerMap, ReachBox, SmoothedPointer
 from .recognizer import CompositeRecognizer, Recognizer, RuleRecognizer, SklearnRecognizer, Smoother
 from .snap import SnapEngine, SnapRules
+from .swipe import SwipeDetector
 from .types import Action
 
 
@@ -38,6 +39,8 @@ class Pipeline:
         )
         d = config.drag
         self.pinch = PinchDetector(d.pinch_on, d.pinch_off, d.debounce_frames)
+        sw_cfg = config.swipe
+        self.swipe = SwipeDetector(sw_cfg.min_travel, sw_cfg.min_speed, sw_cfg.window_ms * 1_000_000, sw_cfg.cooldown_ms * 1_000_000) if sw_cfg.enabled else None
         if mover is None:
             mover = AutomationMover(dispatcher.automation)
         sw, sh = _screen_size(mover)
@@ -89,6 +92,10 @@ class Pipeline:
                 cx, cy = self.drag.pointer.pmap.to_screen(px, py, hand_scale(hf))
                 self.bus.publish(PointerMoved(hf.t_ns, cx, cy, self.engine.state == DRAGGING))
         name, conf = self.recognizer.classify(hf)
+        if self.swipe is not None and self.engine.state == ARMED:
+            sev = self.swipe.update(hf, name)
+            if sev is not None:
+                self.engine.on_swipe(sev)
         tok = self.smoother.push(hf, name, conf)
         if tok is not None:
             self.bus.publish(TokenEmitted(tok))
@@ -97,6 +104,8 @@ class Pipeline:
     def _on_hand_lost(self, ev: HandLost) -> None:
         self.smoother.reset()
         self.pinch.reset()
+        if self.swipe is not None:
+            self.swipe.reset()
         self.engine.on_hand_lost(ev.t_ns)
 
     def _on_tick(self, ev: Tick) -> None:
