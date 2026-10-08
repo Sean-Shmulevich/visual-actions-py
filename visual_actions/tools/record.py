@@ -31,6 +31,7 @@ GUIDED = [
     ("h_right", "Same H sign, but pointing to your right."),
     ("point_up", "One finger: index pointing straight up, the rest folded, thumb tucked."),
     ("two_up", "Two fingers: index and middle together pointing straight up, the rest folded."),
+    ("middle_up", "Middle finger up, the rest folded. You know why."),
     ("none", "Anything else: relax the hand, wave, scratch your head, rest it on the desk, use both hands."),
 ]
 

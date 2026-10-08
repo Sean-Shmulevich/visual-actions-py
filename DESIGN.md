@@ -235,7 +235,20 @@ asserts that recording and live paths produce identical vectors for the same fra
 
 - `RuleRecognizer`: hand-written rules for `open_palm` (all four fingers extended,
   spread, palm facing camera) and `fist` (all tips within 0.35 of their MCPs). These
-  two drive the leader and escape and must not depend on training.
+  two drive the leader and escape and must not depend on training. `two_up` (the
+  peace sign, the media leader) has a looser rule: the thumb pins ring and pinky only
+  half down (path ratio ~0.5), so they need ≤ 0.6, and confidence is the separation
+  `(min(index, middle) - max(ring, pinky)) / 0.5`. On the user's two_up recording
+  this reads 88 % of frames (33 % with the shared ≤ 0.45), and no other recorded
+  class gains a confident still `two_up` token.
+- `thumbs_up` / `thumbs_down` are checked before `fist` (HaGRID "like"/"dislike" read
+  as fist half the time, and a fist cancels): a straight thumb whose tip clears every
+  finger joint by 0.25 hand units above (or below), within ~53° of vertical, every
+  finger tip folded within 0.6 of its knuckle, and the wrist inside the frame (y ≤
+  0.92; hands half out through the bottom edge read as thumbs up). HaGRID val: 88 %
+  of "like", 80 % of "dislike", ≤ 2.3 % of any other class. The trained model never
+  saw these classes (it maps like/dislike to none), so with a model configured the
+  rule must reach `rule_min` to win.
 - `SklearnRecognizer`: loads `models/gestures.joblib`; classes include `"none"`.
 - `Smoother`: majority vote with confidence mean over a 250 ms window, plus a
   stillness check on the wrist centroid (< 12 px drift at 640 px width). Emits one
@@ -273,14 +286,50 @@ as `none`. Nothing visual ever leaves the process.
 States and transitions (the PRD's leader flow):
 
 ```
-IDLE      --open_palm & still--> HOLDING(t0)
-HOLDING   --token != open_palm or !still--> IDLE
+IDLE      --leader & still--> HOLDING(t0, namespace of that leader)
+HOLDING   --token != leader or !still--> IDLE
+HOLDING   --another namespace's leader--> HOLDING restarts in that namespace
 HOLDING   --Tick, now-t0 >= leader_hold_s--> ARMED(namespace, deadline)
 ARMED     --token in bindings[namespace]--> FIRE(action) --> IDLE
 ARMED     --Tick, now >= deadline--> TIMEOUT --> IDLE
 ANY       --fist held 1.0 s--> IDLE (escape)
 ANY       --HandLost for 1.5 s--> IDLE (escape)
 ```
+
+**Root modes (2026-10-08).** Each namespace names its leader in config; the leader
+that starts the hold picks the namespace. Defaults: `open_palm` → `window`, `two_up`
+(the peace sign) → `media`. Rules that keep the two from colliding, measured by
+replaying every recorded session:
+
+- A leader of another namespace seen during a hold switches the hold, and is never a
+  quick command. Without this, a short peace followed by the habitual palm fired
+  Play/Pause.
+- After arming, the leader shape fires only once released: `leader_release_tokens`
+  (3) other tokens in a row, or a brief hand loss. A peace sign misreads for two
+  tokens while the hand moves. Only matters if a config binds a leader in its own mode.
+- When the engine leaves an armed, repeat or drag state, the shape still shown cannot
+  start a new hold until it changes or the hand leaves. Otherwise a peace held after
+  "Next tab" (window) opened media, and a leader held through a timeout re-armed.
+- Pinch-and-drag belongs to the `window` namespace only. In a namespace that binds
+  `pinch_right` / `pinch_left` (media), a pinch enters ADJUST instead: once the pinch
+  has held still (drift ≤ `adjust_settle_travel` 0.04 for `adjust_settle_s` 0.25 s),
+  every `adjust_step` (0.05 of frame width) of sideways travel in the user frame
+  (+x = the user's right) fires one of them;
+  release ends it, and there is no timeout. The settle matters: the user's pinch is
+  an OK sign, and shape changes (peace → palm) cross it briefly while moving. On the
+  newest session, replayed, transitions fired 45 volume steps with no settle, 33 with
+  a timed settle only, and none with the still-settle. Deliberate drag pinches, which
+  move at once, settle in 69 % of cases (median 0.6 s), so the overlay prompts "hold
+  the pinch still" until it is ready.
+
+Default media bindings: `point_up` play/pause, `thumbs_up` / `thumbs_down` next /
+previous track, `pinch_right` / `pinch_left` volume up / down.
+
+While adjusting, and for `popup_ms` after the release, the overlay shows the system
+volume read back from the OS (`DesktopAutomation.volume()`; on macOS CoreAudio's
+virtual main volume and mute of the current default output device, polled at most
+every 50 ms), with the ring drawn at that level. It is the real value, so keyboard or
+menu-bar changes during the pinch show too.
 
 Implemented as one engine with `on_token`, `on_hand_lost`, `on_tick`; it publishes
 `ModeChanged` on every transition, `HoldProgress` while holding, and the dispatcher
@@ -422,7 +471,18 @@ action = { kind = "key", name = "Cmd+Shift+Tab", chord = "cmd+shift+tab" }
 [[namespaces.window.bindings]]
 gesture = "thumbs_up"
 action = { kind = "plugin", name = "toggle-dark-mode" }
+
+[namespaces.media]
+leader = "two_up"   # the peace sign
+
+[[namespaces.media.bindings]]
+gesture = "pinch_right"
+action = { kind = "media", name = "Volume up", verb = "volume_up", steps = 2 }
 ```
+
+Defaults the file does not mention are kept per gesture, and a whole namespace the
+file does not mention (e.g. `media` in a config saved before it existed) comes from
+the defaults.
 
 Config is loaded once at start and on a menu bar "Reload". Bindings are validated
 against known gesture names and discovered plugins; an unknown reference is a
@@ -451,6 +511,11 @@ loop; verify the front app through System Events or a live run loop, never from 
 plain script. `run_native` chooses the runner by
 extension: `.applescript` → `osascript`, `.py` → the app's interpreter, `.sh` → `sh`.
 Windows stub and Linux mock log and return success, so the full pipeline runs in CI.
+
+`MacAutomation.media` posts the hardware media keys (`NSSystemDefined` events,
+subtype 8, `NX_KEYTYPE_PLAY/NEXT/PREVIOUS/SOUND_UP/SOUND_DOWN/MUTE`), so it controls
+the app that owns Now Playing and shows the system volume HUD. A media action's
+`steps` argument presses the key that many times.
 
 Dispatcher: `PLUGIN` actions go to `plugins.runner`; everything else maps 1:1 onto
 the protocol. It always publishes `ActionFired`, with `ok=False` and the error

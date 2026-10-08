@@ -77,6 +77,7 @@ class Pipeline:
             fire_evidence=config.recognizer.fire_evidence,
             min_token_confidence=config.recognizer.min_token_confidence,
             drag=self.drag,
+            leaders=config.leaders(),
         )
         self._last_veto_ns = -(10**18)
         bus.subscribe(HandSeen, self._on_hand_seen)
@@ -88,16 +89,17 @@ class Pipeline:
 
     def _on_hand_seen(self, ev: HandSeen) -> None:
         hf = to_user_frame(ev.hand_frame, self.config.camera.mirror)
-        if self.drag is not None:
-            pev = self.pinch.update(hf)
-            if pev is not None:
-                self.engine.on_pinch(pev)
-            if self.engine.state in (ARMED, DRAGGING):
-                from .pinch import hand_scale, pinch_point
+        pev = self.pinch.update(hf)
+        if pev is not None:
+            self.engine.on_pinch(pev)
+        if self.drag is not None and (
+            self.engine.state == DRAGGING or (self.engine.state == ARMED and self.engine.drag_allowed)
+        ):
+            from .pinch import hand_scale, pinch_point
 
-                px, py = pinch_point(hf)
-                cx, cy = self.drag.pointer.pmap.to_screen(px, py, hand_scale(hf))
-                self.bus.publish(PointerMoved(hf.t_ns, cx, cy, self.engine.state == DRAGGING))
+            px, py = pinch_point(hf)
+            cx, cy = self.drag.pointer.pmap.to_screen(px, py, hand_scale(hf))
+            self.bus.publish(PointerMoved(hf.t_ns, cx, cy, self.engine.state == DRAGGING))
         name, conf = self.recognizer.classify(hf)
         if name == OPEN_PALM and palm_vetoed(hf, ev.face_overlap, self.config):
             name, conf = NONE, 0.5  # a hand on a face is not a leader

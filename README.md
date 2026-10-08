@@ -1,8 +1,16 @@
 # Visual Actions
 
-Hand-gesture control for the desktop with Vim's grammar: hold an open palm to arm a
+Hand-gesture control for the desktop with Vim's grammar: hold a root gesture to arm a
 namespace, make one command gesture, done. macOS first; Windows and Linux behind the
 same interfaces.
+
+| Root gesture (hold ~1 s) | Mode | Commands |
+|---|---|---|
+| Open palm | window | H left/right: Cmd+Tab / Cmd+Shift+Tab · point up / peace: previous / next tab (slide to repeat) · pinch: drag the window under your hand |
+| Peace sign | media | point up: play/pause · thumbs up / down: next / previous track · pinch, hold still a moment, then move toward your right / left: volume up / down, one step per ~5 % of frame width; the popup shows the live system volume; release to finish |
+
+A fist cancels in every mode. Media commands post the system media keys, so they drive
+whatever app owns Now Playing (Spotify, a browser, Music).
 
 - Product spec: Visual Actions PRD (Claude Doc)
 - Technical design: [DESIGN.md](DESIGN.md)

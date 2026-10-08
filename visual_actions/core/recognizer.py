@@ -23,6 +23,8 @@ from .types import (
     RING_MCP,
     RING_PIP,
     RING_TIP,
+    THUMB_IP,
+    THUMB_MCP,
     THUMB_TIP,
     WRIST,
     HandFrame,
@@ -36,6 +38,9 @@ H_LEFT = "h_left"
 H_RIGHT = "h_right"
 POINT_UP = "point_up"
 TWO_UP = "two_up"
+MIDDLE_UP = "middle_up"  # you know the one
+THUMBS_UP = "thumbs_up"
+THUMBS_DOWN = "thumbs_down"
 
 FINGERS = (
     (INDEX_MCP, INDEX_PIP, INDEX_TIP),
@@ -71,15 +76,37 @@ class RuleRecognizer:
     # score ~0.8-0.95 on the path-ratio metric, curled ring/pinky in the H sign ~0.2-0.35,
     # thumb-tip-to-index-MCP ~0.55 open vs ~0.16 tucked. A fist seen knuckles-first is
     # ambiguous in 2D; the trained tier 2 model is the real answer for that.
+    # The peace sign (TWO_UP) is looser: the thumb pins ring and pinky only half down, so
+    # they score ~0.5 (p90 0.6) on the user's two_up recording. At peace_curled = 0.6 the
+    # rule reads 88 % of those frames versus 33 % at 0.45, and no other recorded class gains
+    # a confident still two_up token. Its confidence is the straight-vs-folded separation.
+    # Thumbs up/down are checked before the fist (HaGRID "like"/"dislike" read as fist
+    # about half the time, and a fist cancels): a straight thumb whose tip is clear of
+    # every other joint above (or below) by thumb_clear, pointing within ~53 deg of
+    # vertical, with every finger tip folded back within thumb_fold of its knuckle.
+    # The wrist must be in frame: a hand half out through the bottom edge has its
+    # fingers guessed as folded and read as thumbs up in the user's sessions.
     def __init__(
         self,
         extended: float = 0.7,
         curled: float = 0.45,
         thumb_out: float = 0.35,
         direction_deg: float = 35.0,
+        peace_curled: float = 0.6,
+        peace_separation: float = 0.5,
+        thumb_clear: float = 0.25,
+        thumb_fold: float = 0.6,
+        thumb_cos: float = 0.6,
+        thumb_wrist_max_y: float = 0.92,
     ) -> None:
+        self.thumb_wrist_max_y = thumb_wrist_max_y
+        self.thumb_clear = thumb_clear
+        self.thumb_fold = thumb_fold
+        self.thumb_cos = thumb_cos
         self.extended = extended
         self.curled = curled
+        self.peace_curled = peace_curled
+        self.peace_separation = peace_separation
         self.thumb_out = thumb_out
         self.direction_cos = math.cos(math.radians(direction_deg))
 
@@ -92,23 +119,63 @@ class RuleRecognizer:
         all_curl = all(e <= self.curled for e in ext)
         if all_ext and thumb_idx >= self.thumb_out:
             return OPEN_PALM, min(ext)
+        thumbs = self._thumbs(c) if hf.landmarks[WRIST].y <= self.thumb_wrist_max_y else None
+        if thumbs is not None:
+            return thumbs
         if all_curl:
             return FIST, 1.0 - max(ext)
+        if middle >= self.extended and index <= self.curled and ring <= self.curled and pinky <= self.curled:
+            vm = c.pts[MIDDLE_TIP][:2] - c.pts[MIDDLE_MCP][:2]
+            nm = float(np.linalg.norm(vm))
+            if nm > 1e-6 and -vm[1] / nm >= self.direction_cos:
+                return MIDDLE_UP, min(middle, 1.0 - index, 1.0 - ring, 1.0 - pinky)
         v = c.pts[INDEX_TIP][:2] - c.pts[INDEX_MCP][:2]
         n = float(np.linalg.norm(v))
-        if n > 1e-6 and index >= self.extended and ring <= self.curled and pinky <= self.curled:
-            cos_left, cos_up = -v[0] / n, -v[1] / n
+        if n < 1e-6:
+            return NONE, 0.5
+        cos_left, cos_up = -v[0] / n, -v[1] / n
+        if (
+            index >= self.extended
+            and middle >= self.extended
+            and ring <= self.peace_curled
+            and pinky <= self.peace_curled
+            and cos_up >= self.direction_cos
+        ):
+            straight, folded = min(index, middle), max(ring, pinky)
+            return TWO_UP, min(straight, max(0.0, min(1.0, (straight - folded) / self.peace_separation)))
+        if index >= self.extended and ring <= self.curled and pinky <= self.curled:
             if middle >= self.extended:
                 conf = min(index, middle, 1.0 - ring, 1.0 - pinky)
                 if cos_left >= self.direction_cos:
                     return H_LEFT, conf
                 if -cos_left >= self.direction_cos:
                     return H_RIGHT, conf
-                if cos_up >= self.direction_cos:
-                    return TWO_UP, conf
             elif middle <= self.curled and cos_up >= self.direction_cos:
                 return POINT_UP, min(index, 1.0 - middle, 1.0 - ring, 1.0 - pinky)
         return NONE, 0.5
+
+
+    def _thumbs(self, c: Canonical) -> tuple[str, float] | None:
+        p = c.pts[:, :2]
+        fold = max(float(np.linalg.norm(p[tip] - p[mcp])) for mcp, _, tip in FINGERS)
+        if fold > self.thumb_fold:
+            return None
+        v = p[THUMB_TIP] - p[THUMB_MCP]
+        n = float(np.linalg.norm(v))
+        full = float(np.linalg.norm(p[THUMB_IP] - p[THUMB_MCP]) + np.linalg.norm(p[THUMB_TIP] - p[THUMB_IP]))
+        if n < 1e-6 or n / max(full, 1e-6) < self.extended:
+            return None  # a bent thumb is a fist
+        others = [j for f in FINGERS for j in f]
+        ys = p[others, 1]
+        cos_up = -v[1] / n
+        above = float(ys.min() - p[THUMB_TIP][1])
+        below = float(p[THUMB_TIP][1] - ys.max())
+        fold_conf = min(1.0, (self.thumb_fold + 0.15 - fold) / 0.35)
+        if cos_up >= self.thumb_cos and above >= self.thumb_clear:
+            return THUMBS_UP, min(fold_conf, min(1.0, above / (2 * self.thumb_clear)))
+        if -cos_up >= self.thumb_cos and below >= self.thumb_clear:
+            return THUMBS_DOWN, min(fold_conf, min(1.0, below / (2 * self.thumb_clear)))
+        return None
 
 
 class SklearnRecognizer:

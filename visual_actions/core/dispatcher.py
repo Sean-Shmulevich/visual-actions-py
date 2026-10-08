@@ -29,11 +29,19 @@ class Dispatcher:
             elif action.kind is ActionKind.SCROLL:
                 self.automation.scroll(int(action.arg("dx", "0") or 0), int(action.arg("dy", "0") or 0))
             elif action.kind is ActionKind.MEDIA:
-                self.automation.media(MediaVerb(action.arg("verb", "play_pause")))
+                verb = MediaVerb(action.arg("verb", "play_pause"))
+                for _ in range(max(1, int(action.arg("steps", "1") or 1))):
+                    self.automation.media(verb)
             elif action.kind is ActionKind.PLUGIN:
                 if self.plugin_runner is None:
                     raise RuntimeError("no plugin runner configured")
                 ok, message = self.plugin_runner(action)
+            elif action.kind is ActionKind.OPEN:
+                target = action.arg("target")
+                if not target:
+                    raise ValueError("open action without target")
+                if not self.automation.open(target):
+                    raise RuntimeError(f"could not open {target}")
             elif action.kind is ActionKind.WINDOW:
                 raise NotImplementedError("window actions arrive with the AX driver")
             else:

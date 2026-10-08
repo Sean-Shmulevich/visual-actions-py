@@ -27,6 +27,8 @@ class MockAutomation:
         movable: bool = True,
     ) -> None:
         self.calls: list[tuple] = []
+        self.volume_level = 0.5
+        self.muted = False
         self.echo = echo
         self.windows: list[WindowInfo] = list(windows) if windows is not None else default_windows()
         self.screen = screen
@@ -48,10 +50,24 @@ class MockAutomation:
 
     def media(self, verb: MediaVerb) -> None:
         self._rec("media", verb)
+        step = 1 / 16  # one hardware volume key step
+        if verb is MediaVerb.VOLUME_UP:
+            self.volume_level, self.muted = min(1.0, self.volume_level + step), False
+        elif verb is MediaVerb.VOLUME_DOWN:
+            self.volume_level = max(0.0, self.volume_level - step)
+        elif verb is MediaVerb.MUTE:
+            self.muted = not self.muted
+
+    def volume(self) -> tuple[float, bool] | None:
+        return self.volume_level, self.muted
 
     def run_native(self, script_path: Path, timeout_s: float) -> NativeResult:
         self._rec("run_native", str(script_path), timeout_s)
         return NativeResult(ok=True, stdout="mock")
+
+    def open(self, target: str) -> bool:
+        self._rec("open", target)
+        return True
 
     # -- windows -------------------------------------------------------------
 

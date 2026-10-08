@@ -43,7 +43,14 @@ class VisualActionsApp(rumps.App):
             from .overlay import Overlay
 
             t = cfg.timing.to_timing()
-            Overlay(self.bus, t.leader_hold_ns, t.command_timeout_ns, cfg.timing.popup_ms, t.drag_lost_grace_ns)
+            Overlay(
+                self.bus,
+                t.leader_hold_ns,
+                t.command_timeout_ns,
+                cfg.timing.popup_ms,
+                t.drag_lost_grace_ns,
+                volume=self._system_volume,
+            )
 
         self.dashboard = None
         if cfg.feedback.dashboard:
@@ -70,10 +77,15 @@ class VisualActionsApp(rumps.App):
             None,
             rumps.MenuItem("Quit", callback=self.quit),
         ]
-        self.bus.subscribe(ModeChanged, lambda e: self._set_title({"idle": "✋", "holding": "⏳", "armed": "🟢", "dragging": "🤏", "repeat": "🔁"}.get(e.new, "✋")))
+        self.bus.subscribe(ModeChanged, lambda e: self._set_title(mode_icon(e.new, e.namespace)))
         self.bus.subscribe(ActionFired, lambda e: self._set_status(f"Last: {e.action.name} {'ok' if e.ok else e.message}"))
         self.timer = rumps.Timer(self.tick, cfg.timing.tick_ms / 1000)
         self._install_terminate_hook()
+
+    def _system_volume(self) -> tuple[float, bool] | None:
+        # looked up on each call: a reload swaps self.services
+        read = getattr(self.services.automation, "volume", None)
+        return read() if callable(read) else None
 
     # -- lifecycle ----------------------------------------------------------
 
@@ -199,3 +211,11 @@ class VisualActionsApp(rumps.App):
 def run_menubar(cfg: Config, dry_run: bool, use_gate: bool) -> int:
     VisualActionsApp(cfg, dry_run, use_gate).run()
     return 0
+
+
+def mode_icon(mode: str, namespace: str | None) -> str:
+    if mode == "armed" and namespace == "media":
+        return "🎵"
+    if mode == "adjust":
+        return "🔊"
+    return {"idle": "✋", "holding": "⏳", "armed": "🟢", "dragging": "🤏", "repeat": "🔁"}.get(mode, "✋")

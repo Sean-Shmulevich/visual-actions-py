@@ -14,6 +14,7 @@ class MediaVerb(Enum):
     PREV = "prev"
     VOLUME_UP = "volume_up"
     VOLUME_DOWN = "volume_down"
+    MUTE = "mute"
 
 
 @dataclass(frozen=True)
@@ -58,7 +59,15 @@ class DesktopAutomation(Protocol):
 
     def media(self, verb: MediaVerb) -> None: ...
 
+    def volume(self) -> tuple[float, bool] | None:
+        """System output volume as (level 0..1, muted), or None where it cannot be read."""
+        ...
+
     def run_native(self, script_path: Path, timeout_s: float) -> NativeResult: ...
+
+    def open(self, target: str) -> bool:
+        """Open a URL or file with the system's default handler."""
+        ...
 
     # -- windows (screen points, origin top-left) ---------------------------
 

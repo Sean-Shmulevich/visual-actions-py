@@ -45,6 +45,15 @@ def pose(name: str) -> list[tuple[float, float]]:
     elif name == "two_up":
         thumb = THUMB_TUCKED
         fingers = {"index": (up, True), "middle": (up, True), "ring": (up, False), "pinky": (up, False)}
+    elif name == "thumbs_up":  # fist with a straight thumb pointing up, tip above every finger joint
+        thumb = [(-0.5, -0.3), (-0.55, -0.85), (-0.6, -1.35), (-0.62, -1.85)]
+        fingers = {f: (up, False) for f in MCPS}
+    elif name == "thumbs_down":  # fist with a straight thumb pointing down, tip below every finger joint
+        thumb = [(-0.5, -0.3), (-0.6, 0.05), (-0.62, 0.4), (-0.63, 0.75)]
+        fingers = {f: (up, False) for f in MCPS}
+    elif name == "middle_up":
+        thumb = THUMB_TUCKED
+        fingers = {"index": (up, False), "middle": (up, True), "ring": (up, False), "pinky": (up, False)}
     elif name == "pinch":  # thumb tip meets a curled index tip, other fingers relaxed-curled
         thumb = [(-0.45, -0.35), (-0.55, -0.75), (-0.45, -1.15), (-0.30, -1.45)]
         index_curl = [MCPS["index"], (-0.45, -1.42), (-0.40, -1.58), (-0.28, -1.43)]

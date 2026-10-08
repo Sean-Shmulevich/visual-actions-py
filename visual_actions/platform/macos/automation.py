@@ -31,6 +31,21 @@ KEYCODES = {
 }
 
 
+# Media keys are NSSystemDefined events (subtype 8, "aux control buttons") whose data1
+# packs the NX_KEYTYPE code with a key-down (0xA) or key-up (0xB) state (IOKit ev_keymap.h).
+NS_SYSTEM_DEFINED = 14
+NX_SUBTYPE_AUX_CONTROL_BUTTONS = 8
+NX_KEYDOWN, NX_KEYUP = 0xA, 0xB
+MEDIA_KEYS = {
+    MediaVerb.VOLUME_UP: 0,  # NX_KEYTYPE_SOUND_UP
+    MediaVerb.VOLUME_DOWN: 1,  # NX_KEYTYPE_SOUND_DOWN
+    MediaVerb.MUTE: 7,  # NX_KEYTYPE_MUTE
+    MediaVerb.PLAY_PAUSE: 16,  # NX_KEYTYPE_PLAY
+    MediaVerb.NEXT: 17,  # NX_KEYTYPE_NEXT
+    MediaVerb.PREV: 18,  # NX_KEYTYPE_PREVIOUS
+}
+
+
 # Keys that a real keyboard reports with the "secondary fn" and "numeric pad" flags set.
 # Mission Control's Ctrl+Arrow desktop switch ignores synthetic arrows without them
 # (verified 2026-10-08: plain flags did nothing, with these flags the Space changed).
@@ -44,6 +59,12 @@ class MacAutomation:
 
         self._q = Quartz
         self.windows = MacWindows()
+        try:
+            from .volume import CoreAudioVolume
+
+            self._volume: CoreAudioVolume | None = CoreAudioVolume()
+        except OSError:
+            self._volume = None
         self._flag = {
             "cmd": Quartz.kCGEventFlagMaskCommand,
             "shift": Quartz.kCGEventFlagMaskShift,
@@ -85,14 +106,20 @@ class MacAutomation:
         raise NotImplementedError("AX window management arrives in a later milestone")
 
     def media(self, verb: MediaVerb) -> None:
-        script = {
-            MediaVerb.PLAY_PAUSE: 'tell application "Music" to playpause',
-            MediaVerb.NEXT: 'tell application "Music" to next track',
-            MediaVerb.PREV: 'tell application "Music" to previous track',
-            MediaVerb.VOLUME_UP: "set volume output volume ((output volume of (get volume settings)) + 10)",
-            MediaVerb.VOLUME_DOWN: "set volume output volume ((output volume of (get volume settings)) - 10)",
-        }[verb]
-        subprocess.run(["osascript", "-e", script], check=True, timeout=5, capture_output=True)
+        """Post the hardware media key, so it drives whatever owns Now Playing (Spotify,
+        a browser tab, Music) and volume steps show the system HUD."""
+        from AppKit import NSEvent
+
+        key = MEDIA_KEYS[verb]
+        for state in (NX_KEYDOWN, NX_KEYUP):
+            ev = NSEvent.otherEventWithType_location_modifierFlags_timestamp_windowNumber_context_subtype_data1_data2_(
+                NS_SYSTEM_DEFINED, (0, 0), state << 8, 0, 0, None, NX_SUBTYPE_AUX_CONTROL_BUTTONS, (key << 16) | (state << 8), -1
+            )
+            self._q.CGEventPost(self._q.kCGHIDEventTap, ev.CGEvent())
+            time.sleep(0.01)
+
+    def volume(self) -> tuple[float, bool] | None:
+        return self._volume.read() if self._volume is not None else None
 
     def run_native(self, script_path: Path, timeout_s: float) -> NativeResult:
         ext = script_path.suffix.lower()
@@ -109,6 +136,9 @@ class MacAutomation:
         except subprocess.TimeoutExpired:
             return NativeResult(ok=False, stderr=f"timed out after {timeout_s}s")
         return NativeResult(ok=p.returncode == 0, stdout=p.stdout.strip(), stderr=p.stderr.strip())
+
+    def open(self, target: str) -> bool:
+        return subprocess.run(["open", target], check=False, capture_output=True).returncode == 0
 
     # -- windows -------------------------------------------------------------
 

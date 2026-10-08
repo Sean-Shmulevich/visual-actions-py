@@ -22,6 +22,10 @@ class TimingConfig:
     tick_ms: int = 10  # queue drain + timers; 10 ms keeps drag moves from bunching into 50 ms bursts
     confidence_gain: float = 1.5  # hold fill rate at confidence 1.0 (1.0 = wall clock)
     leader_min_confidence: float = 0.8  # palm tokens below this neither start nor fill the hold
+    leader_release_tokens: int = 3  # after arming, the leader shape fires (if bound) only after this many other tokens in a row
+    adjust_step: float = 0.05  # media pinch: sideways travel (fraction of frame width) per volume step
+    adjust_settle_s: float = 0.25  # media pinch: hold the pinch still this long before movement changes the volume
+    adjust_settle_travel: float = 0.04  # media pinch: drift during the settle that restarts it
     hold_break_tokens: int = 2  # consecutive non-palm tokens (250 ms each) before a hold is abandoned
     quick_command_min_hold_s: float = 0.3  # clear palm this long + a confident bound gesture = arm and fire in one motion
     quick_command_min_confidence: float = 0.85
@@ -39,6 +43,10 @@ class TimingConfig:
             escape_lost_ns=int(self.escape_lost_s * s),
             confidence_gain=self.confidence_gain,
             leader_min_confidence=self.leader_min_confidence,
+            leader_release_tokens=self.leader_release_tokens,
+            adjust_step=self.adjust_step,
+            adjust_settle_ns=int(self.adjust_settle_s * s),
+            adjust_settle_travel=self.adjust_settle_travel,
             drag_lost_grace_ns=int(self.drag_lost_grace_s * s),
             hold_break_tokens=self.hold_break_tokens,
             quick_command_min_hold_ns=int(self.quick_command_min_hold_s * s),
@@ -136,6 +144,13 @@ class Config:
     leader: LeaderConfig = field(default_factory=LeaderConfig)
     namespaces: dict[str, NamespaceConfig] = field(default_factory=dict)
 
+    def leaders(self) -> dict[str, str]:
+        """Leader gesture -> the namespace (root mode) it opens. First namespace wins a shared leader."""
+        out: dict[str, str] = {}
+        for ns, nc in self.namespaces.items():
+            out.setdefault(nc.leader, ns)
+        return out
+
     def bindings(self) -> Bindings:
         out = Bindings()
         for ns, nc in self.namespaces.items():
@@ -149,11 +164,29 @@ DEFAULT_BINDINGS: list[dict[str, Any]] = [
     {"gesture": "h_right", "action": {"kind": "key", "name": "Cmd+Shift+Tab", "chord": "cmd+shift+tab"}},
     {"gesture": "point_up", "action": {"kind": "key", "name": "Previous tab", "chord": "cmd+shift+[", "repeat": True}},
     {"gesture": "two_up", "action": {"kind": "key", "name": "Next tab", "chord": "cmd+shift+]", "repeat": True}},
+    {"gesture": "middle_up", "action": {"kind": "open", "name": "Never gonna give you up", "target": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"}},
+]
+
+
+# Media mode, opened by holding the peace sign (two_up). pinch_right / pinch_left are not
+# hand shapes: a pinch enters the adjust state, and each adjust_step of sideways travel
+# (toward the user's right or left) with the fingers pinched fires one of them.
+DEFAULT_MEDIA_BINDINGS: list[dict[str, Any]] = [
+    {"gesture": "point_up", "action": {"kind": "media", "name": "Play/Pause", "verb": "play_pause"}},
+    {"gesture": "thumbs_up", "action": {"kind": "media", "name": "Next track", "verb": "next"}},
+    {"gesture": "thumbs_down", "action": {"kind": "media", "name": "Previous track", "verb": "prev"}},
+    {"gesture": "pinch_right", "action": {"kind": "media", "name": "Volume up", "verb": "volume_up"}},
+    {"gesture": "pinch_left", "action": {"kind": "media", "name": "Volume down", "verb": "volume_down"}},
 ]
 
 
 def default_config() -> Config:
-    return Config(namespaces={"window": NamespaceConfig(bindings=list(DEFAULT_BINDINGS))})
+    return Config(
+        namespaces={
+            "window": NamespaceConfig(leader="open_palm", bindings=list(DEFAULT_BINDINGS)),
+            "media": NamespaceConfig(leader="two_up", bindings=list(DEFAULT_MEDIA_BINDINGS)),
+        }
+    )
 
 
 def action_from_dict(d: dict[str, Any]) -> Action:
@@ -191,7 +224,8 @@ def load_config(path: Path | None) -> Config:
             have = {b["gesture"] for b in user}
             defaults = cfg.namespaces.get(ns)
             extra = [b for b in defaults.bindings if b["gesture"] not in have] if defaults else []
-            merged[ns] = NamespaceConfig(leader=nc.get("leader", "open_palm"), bindings=user + extra)
+            leader = nc.get("leader", defaults.leader if defaults else "open_palm")
+            merged[ns] = NamespaceConfig(leader=leader, bindings=user + extra)
         for ns, nc in cfg.namespaces.items():
             merged.setdefault(ns, nc)
         cfg.namespaces = merged

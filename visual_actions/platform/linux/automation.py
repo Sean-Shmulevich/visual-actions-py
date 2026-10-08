@@ -23,9 +23,16 @@ class LinuxAutomation:
     def media(self, verb: MediaVerb) -> None:
         log.info("mock media %s", verb)
 
+    def volume(self) -> tuple[float, bool] | None:
+        return None
+
     def run_native(self, script_path: Path, timeout_s: float) -> NativeResult:
         log.info("mock run_native %s", script_path)
         return NativeResult(ok=True, stdout="mock")
+
+    def open(self, target: str) -> bool:
+        log.info("stub open %s", target)
+        return False
 
     def list_windows(self) -> list[WindowInfo]:
         return []

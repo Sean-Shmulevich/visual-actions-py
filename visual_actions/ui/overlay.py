@@ -5,6 +5,8 @@ Main thread only. Subscribes to the bus and redraws on Tick.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import objc
 from AppKit import (
     NSBackingStoreBuffered,
@@ -27,9 +29,10 @@ from Foundation import NSString
 
 from ..core.drag import DragEvent, DragPhase
 from ..core.events import ActionFired, Bus, HoldProgress, ModeChanged, Tick, TokenEmitted
-from ..core.modes import ARMED, DRAGGING, HOLDING, IDLE, REPEAT
+from ..core.modes import ADJUST, ARMED, DRAGGING, HOLDING, IDLE, REPEAT
 
 W, H = 260, 72
+LEADER_LABELS = {"window": "palm", "media": "peace"}
 
 
 class OverlayView(NSView):
@@ -63,6 +66,7 @@ class OverlayView(NSView):
                 DRAGGING: NSColor.colorWithCalibratedRed_green_blue_alpha_(0.85, 0.55, 1.0, 1.0),
                 "lost": NSColor.colorWithCalibratedRed_green_blue_alpha_(0.95, 0.3, 0.35, 1.0),
                 REPEAT: NSColor.colorWithCalibratedRed_green_blue_alpha_(1.0, 0.75, 0.3, 1.0),
+                ADJUST: NSColor.colorWithCalibratedRed_green_blue_alpha_(0.85, 0.55, 1.0, 1.0),
             }.get(s["mode"], NSColor.whiteColor())
             if s["flash"]:
                 color = NSColor.colorWithCalibratedRed_green_blue_alpha_(1.0, 0.8, 0.2, 1.0)
@@ -84,11 +88,25 @@ class OverlayView(NSView):
 
 
 class Overlay:
-    def __init__(self, bus: Bus, hold_ns: int, timeout_ns: int, popup_ms: int, grace_ns: int = 2_500_000_000) -> None:
+    def __init__(
+        self,
+        bus: Bus,
+        hold_ns: int,
+        timeout_ns: int,
+        popup_ms: int,
+        grace_ns: int = 2_500_000_000,
+        volume: Callable[[], tuple[float, bool] | None] | None = None,
+    ) -> None:
+        self.volume = volume  # reads the real system volume; polled only while adjusting
+        self._volume_cache: tuple[float, bool] | None = None
+        self._volume_read_ns = 0
+        self.adjust_until_ns = 0  # keep showing the volume for popup_ms after the pinch is released
         self.hold_ns, self.timeout_ns, self.popup_ns = hold_ns, timeout_ns, popup_ms * 1_000_000
         self.grace_ns = grace_ns
         self.lost_since_ns: int | None = None
         self.mode = IDLE
+        self.adjust_ready = False
+        self.namespace: str | None = None
         self.mode_since_ns = 0
         self.hold_fraction = 0.0
         self.hold_rate = 0.0
@@ -132,9 +150,13 @@ class Overlay:
         self.drag_window = ev.window if ev.phase in (DragPhase.START, DragPhase.MOVE, DragPhase.RESUME, DragPhase.PAUSE) else ""
 
     def _on_mode(self, ev: ModeChanged) -> None:
+        if ev.new != HOLDING or ev.namespace != self.namespace:
+            self.hold_fraction, self.hold_rate = 0.0, 0.0  # a switch of root mode restarts the ring
         self.mode, self.mode_since_ns, self.deadline_ns = ev.new, ev.t_ns, ev.deadline_ns
-        if ev.new != HOLDING:
-            self.hold_fraction = 0.0
+        self.namespace = ev.namespace
+        self.adjust_ready = ev.old == ADJUST and ev.new == ADJUST  # second ADJUST event = the pinch settled
+        if ev.old == ADJUST and ev.new != ADJUST:
+            self.adjust_until_ns = ev.t_ns + self.popup_ns
         if ev.new != DRAGGING:
             self.lost_since_ns = None
 
@@ -148,15 +170,42 @@ class Overlay:
         self.flash_text = ev.action.name if ev.ok else f"{ev.action.name} failed"
         self.flash_until_ns = ev.t_ns + self.popup_ns
 
+    def _read_volume(self, now: int) -> tuple[float, bool] | None:
+        if self.volume is None:
+            return None
+        if now - self._volume_read_ns >= 50_000_000:  # ~1 ms CoreAudio read, 20 times a second at most
+            self._volume_read_ns = now
+            try:
+                self._volume_cache = self.volume()
+            except Exception:  # noqa: BLE001 - a failed read shows "volume" without a number
+                self._volume_cache = None
+        return self._volume_cache
+
     def _on_tick(self, ev: Tick) -> None:
         now = ev.t_ns
         s = self.view.state
         flashing = now < self.flash_until_ns
-        if flashing:
+        if self.mode == ADJUST or (self.mode == IDLE and now < self.adjust_until_ns):
+            # the live system volume, read back from the OS, not a count of our own key presses
+            vol = self._read_volume(now)
+            if vol is None:
+                label, level = "volume", 1.0
+            else:
+                level = vol[0]
+                label = f"Volume {round(level * 100)}%" + (" (muted)" if vol[1] else "")
+            if self.mode != ADJUST:
+                sub = "done"
+            elif self.adjust_ready:
+                sub = "◀ quieter · pinch · louder ▶"
+            else:
+                sub = "hold the pinch still…"
+            s.update(mode=ADJUST, progress=level, label=label, sub=sub, flash=False)
+        elif flashing:
             s.update(mode=self.mode, progress=1.0, label=self.flash_text, sub="fired", flash=True)
         elif self.mode == HOLDING:
             p = min(1.0, self.hold_fraction + max(0.0, self.hold_rate) * (now - self.hold_at_ns) / 1e9)
-            s.update(mode=HOLDING, progress=p, label="Hold…", sub=f"palm {min(100, int(p * 100))}%", flash=False)
+            shape = LEADER_LABELS.get(self.namespace or "", self.namespace or "palm")
+            s.update(mode=HOLDING, progress=p, label=f"Hold… {self.namespace or ''}", sub=f"{shape} {min(100, int(p * 100))}%", flash=False)
         elif self.mode == DRAGGING and self.lost_since_ns is not None:
             left = max(0, self.grace_ns - (now - self.lost_since_ns))
             s.update(mode="lost", progress=left / self.grace_ns, label="hand lost", sub=f"{left / 1e9:.1f}s to resume", flash=False)
@@ -167,7 +216,7 @@ class Overlay:
             s.update(mode=REPEAT, progress=left / 1.5e9, label="slide to repeat", sub=f"{self.flash_text or self.last_token}", flash=False)
         elif self.mode == ARMED and self.deadline_ns:
             left = max(0, self.deadline_ns - now)
-            s.update(mode=ARMED, progress=left / self.timeout_ns, label="window", sub=f"{left / 1e9:.1f}s · {self.last_token}", flash=False)
+            s.update(mode=ARMED, progress=left / self.timeout_ns, label=self.namespace or "window", sub=f"{left / 1e9:.1f}s · {self.last_token}", flash=False)
         else:
             if self.panel.isVisible():
                 self.panel.orderOut_(None)

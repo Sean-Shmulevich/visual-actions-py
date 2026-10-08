@@ -59,6 +59,7 @@ class ActionKind(Enum):
     WINDOW = "window"
     MEDIA = "media"
     PLUGIN = "plugin"
+    OPEN = "open"  # open a URL or file with the system handler
 
 
 @dataclass(frozen=True)

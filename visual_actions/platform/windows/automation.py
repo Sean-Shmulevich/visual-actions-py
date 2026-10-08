@@ -23,9 +23,16 @@ class WindowsAutomation:
     def media(self, verb: MediaVerb) -> None:
         log.info("stub media %s", verb)
 
+    def volume(self) -> tuple[float, bool] | None:
+        return None
+
     def run_native(self, script_path: Path, timeout_s: float) -> NativeResult:
         log.info("stub run_native %s", script_path)
         return NativeResult(ok=True, stdout="stub")
+
+    def open(self, target: str) -> bool:
+        log.info("stub open %s", target)
+        return False
 
     def list_windows(self) -> list[WindowInfo]:
         return []

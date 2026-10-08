@@ -11,7 +11,7 @@ from pathlib import Path
 
 from ..core.drag import DragEvent, DragPhase
 from ..core.events import ActionFired, Bus, ModeChanged
-from ..core.modes import ARMED, DRAGGING, HOLDING, IDLE
+from ..core.modes import ADJUST, ARMED, DRAGGING, HOLDING, IDLE
 
 SOUNDS = Path("/System/Library/Sounds")
 MAP = {
@@ -38,11 +38,13 @@ class SoundFeedback:
         bus.subscribe(ActionFired, self._on_action)
         bus.subscribe(DragEvent, lambda e: play("lost") if e.phase is DragPhase.PAUSE else None)
         self._fired_at: int | None = None
+        self._mode = IDLE
 
     def _on_mode(self, ev: ModeChanged) -> None:
-        if ev.new == DRAGGING:
+        self._mode = ev.new
+        if ev.new in (DRAGGING, ADJUST):
             play("grab")
-        elif ev.old == DRAGGING and ev.new == IDLE:
+        elif ev.old in (DRAGGING, ADJUST) and ev.new == IDLE:
             play("drop")
         elif ev.new == ARMED:
             play("armed")
@@ -53,4 +55,6 @@ class SoundFeedback:
 
     def _on_action(self, ev: ActionFired) -> None:
         self._fired_at = ev.t_ns
+        if self._mode == ADJUST and ev.ok:
+            return  # volume steps while pinching: the system HUD is the feedback, a chime per step is noise
         play("fired" if ev.ok else "failed")
