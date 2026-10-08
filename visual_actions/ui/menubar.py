@@ -70,7 +70,7 @@ class VisualActionsApp(rumps.App):
             None,
             rumps.MenuItem("Quit", callback=self.quit),
         ]
-        self.bus.subscribe(ModeChanged, lambda e: self._set_title({"idle": "✋", "holding": "⏳", "armed": "🟢", "dragging": "🤏"}.get(e.new, "✋")))
+        self.bus.subscribe(ModeChanged, lambda e: self._set_title({"idle": "✋", "holding": "⏳", "armed": "🟢", "dragging": "🤏", "repeat": "🔁"}.get(e.new, "✋")))
         self.bus.subscribe(ActionFired, lambda e: self._set_status(f"Last: {e.action.name} {'ok' if e.ok else e.message}"))
         self.timer = rumps.Timer(self.tick, cfg.timing.tick_ms / 1000)
 

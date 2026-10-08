@@ -172,4 +172,6 @@ class Smoother:
             confidence=(sum(confs) / len(confs)) * (count / len(self._buf)),
             hand=hf.hand,
             still=drift <= self.still_px,
+            x=w.x,
+            y=w.y,
         )

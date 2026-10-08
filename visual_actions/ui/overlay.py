@@ -27,7 +27,7 @@ from Foundation import NSString
 
 from ..core.drag import DragEvent, DragPhase
 from ..core.events import ActionFired, Bus, HoldProgress, ModeChanged, Tick, TokenEmitted
-from ..core.modes import ARMED, DRAGGING, HOLDING, IDLE
+from ..core.modes import ARMED, DRAGGING, HOLDING, IDLE, REPEAT
 
 W, H = 260, 72
 
@@ -62,6 +62,7 @@ class OverlayView(NSView):
                 ARMED: NSColor.colorWithCalibratedRed_green_blue_alpha_(0.35, 0.85, 0.45, 1.0),
                 DRAGGING: NSColor.colorWithCalibratedRed_green_blue_alpha_(0.85, 0.55, 1.0, 1.0),
                 "lost": NSColor.colorWithCalibratedRed_green_blue_alpha_(0.95, 0.3, 0.35, 1.0),
+                REPEAT: NSColor.colorWithCalibratedRed_green_blue_alpha_(1.0, 0.75, 0.3, 1.0),
             }.get(s["mode"], NSColor.whiteColor())
             if s["flash"]:
                 color = NSColor.colorWithCalibratedRed_green_blue_alpha_(1.0, 0.8, 0.2, 1.0)
@@ -161,6 +162,9 @@ class Overlay:
             s.update(mode="lost", progress=left / self.grace_ns, label="hand lost", sub=f"{left / 1e9:.1f}s to resume", flash=False)
         elif self.mode == DRAGGING:
             s.update(mode=DRAGGING, progress=1.0, label="drag", sub=self.drag_window[:34], flash=False)
+        elif self.mode == REPEAT and self.deadline_ns:
+            left = max(0, self.deadline_ns - now)
+            s.update(mode=REPEAT, progress=left / 1.5e9, label="slide to repeat", sub=f"{self.flash_text or self.last_token}", flash=False)
         elif self.mode == ARMED and self.deadline_ns:
             left = max(0, self.deadline_ns - now)
             s.update(mode=ARMED, progress=left / self.timeout_ns, label="window", sub=f"{left / 1e9:.1f}s · {self.last_token}", flash=False)

@@ -15,6 +15,9 @@ DRAGGING--pinch END--------------------> IDLE
 DRAGGING--hand lost--------------------> DRAGGING, suspended (window stays, red frame)
 suspended--pinch back within grace-----> DRAGGING resumed from the window's current place
 suspended--hand back unpinched / grace-> IDLE (dropped in place)
+ARMED   --repeatable action fires------> REPEAT(deadline = now + repeat_window)
+REPEAT  --same shape, wrist slid sideways >= repeat_slide--> fire again, deadline refreshed
+REPEAT  --deadline-----------------------> IDLE
 ANY     --fist held escape_fist_s--------> IDLE   (only while fist is unbound in the namespace)
 ANY     --hand lost escape_lost_s--------> IDLE
 
@@ -35,7 +38,7 @@ from .pinch import PinchEvent, PinchPhase
 from .recognizer import FIST, OPEN_PALM
 from .types import Action, Token
 
-IDLE, HOLDING, ARMED, DRAGGING = "idle", "holding", "armed", "dragging"
+IDLE, HOLDING, ARMED, DRAGGING, REPEAT = "idle", "holding", "armed", "dragging", "repeat"
 
 
 @dataclass(frozen=True)
@@ -46,6 +49,8 @@ class Timing:
     escape_lost_ns: int = 1_500_000_000
     confidence_gain: float = 1.5  # fill rate at confidence 1.0, relative to wall clock
     drag_lost_grace_ns: int = 2_500_000_000  # hand lost mid-drag: wait this long for it to come back
+    repeat_window_ns: int = 1_500_000_000  # slide-to-repeat window after a repeatable action
+    repeat_slide: float = 0.10  # sideways wrist travel (fraction of frame width) that counts as a slide
     leader_min_confidence: float = 0.8  # palm tokens below this neither start nor fill the hold
 
 
@@ -83,6 +88,10 @@ class ModeEngine:
         self._fire_gesture: str | None = None
         self._fire_mass: float = 0.0
         self._hold_rate: float = 0.0
+        self._repeat_action: Action | None = None
+        self._repeat_gesture: str | None = None
+        self._repeat_anchor_x: float = 0.5
+        self.repeat_count = 0
 
     def projected_hold_ns(self, t_ns: int) -> float:
         """Evidence extrapolated to t_ns at the last token's rate, so arming and the ring are smooth."""
@@ -137,8 +146,27 @@ class ModeEngine:
                 self._fire_gesture, self._fire_mass = tok.name, 0.0
             self._fire_mass += tok.confidence
             if self._fire_mass >= self.fire_evidence:
-                self._go(IDLE, tok.t_ns)
+                if action.arg("repeat") in ("true", "True", "1"):
+                    # fingerspelling-style slide: same shape, move sideways, fires again
+                    self._repeat_action, self._repeat_gesture = action, tok.name
+                    self._repeat_anchor_x = tok.x
+                    self.repeat_count = 1
+                    self._deadline_ns = tok.t_ns + self.timing.repeat_window_ns
+                    self._go(REPEAT, tok.t_ns)
+                else:
+                    self._go(IDLE, tok.t_ns)
                 self.fire(action, tok.t_ns)
+        elif self.state == REPEAT:
+            if tok.name != self._repeat_gesture or tok.confidence < self.min_token_confidence:
+                return  # only the same shape counts; anything else is ignored until the window closes
+            if abs(tok.x - self._repeat_anchor_x) >= self.timing.repeat_slide and self._repeat_action is not None:
+                self._repeat_anchor_x = tok.x
+                self.repeat_count += 1
+                self._deadline_ns = tok.t_ns + self.timing.repeat_window_ns
+                self.bus.publish(ModeChanged(tok.t_ns, REPEAT, REPEAT, self.namespace, self._deadline_ns))
+                self.fire(self._repeat_action, tok.t_ns)
+            elif tok.still:
+                self._repeat_anchor_x = tok.x  # a still hand re-anchors, so slow drift never adds up to a slide
 
     def on_pinch(self, ev: PinchEvent) -> None:
         """Per-frame pinch input. A pinch while ARMED grabs the window under the hand;
@@ -189,7 +217,7 @@ class ModeEngine:
             self._deadline_ns = t_ns + self.timing.command_timeout_ns
             self._fire_gesture, self._fire_mass = None, 0.0
             self._go(ARMED, t_ns)
-        elif self.state == ARMED and self._deadline_ns is not None and t_ns >= self._deadline_ns:
+        elif self.state in (ARMED, REPEAT) and self._deadline_ns is not None and t_ns >= self._deadline_ns:
             self._go(IDLE, t_ns)
 
     # -- internals ----------------------------------------------------------
@@ -206,6 +234,7 @@ class ModeEngine:
             self._lost_since_ns = None
             self._fire_gesture, self._fire_mass = None, 0.0
             self._hold_rate = 0.0
+            self._repeat_action, self._repeat_gesture, self.repeat_count = None, None, 0
         self.bus.publish(
             ModeChanged(t_ns=t_ns, old=old, new=new, namespace=self.namespace, deadline_ns=self._deadline_ns)
         )

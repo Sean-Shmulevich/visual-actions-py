@@ -49,6 +49,8 @@ class Token:
     confidence: float
     hand: Hand
     still: bool
+    x: float = 0.5  # wrist position in the user frame, 0..1 (for slide-to-repeat)
+    y: float = 0.5
 
 
 class ActionKind(Enum):

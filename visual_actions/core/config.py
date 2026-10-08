@@ -23,6 +23,8 @@ class TimingConfig:
     confidence_gain: float = 1.5  # hold fill rate at confidence 1.0 (1.0 = wall clock)
     leader_min_confidence: float = 0.8  # palm tokens below this neither start nor fill the hold
     drag_lost_grace_s: float = 2.5  # hand lost mid-drag: window stays and waits this long for the hand
+    repeat_window_s: float = 1.5  # after a repeatable action, a sideways slide of the same shape fires it again within this
+    repeat_slide: float = 0.10  # the slide: wrist must move this fraction of the frame width sideways
 
     def to_timing(self) -> Timing:
         s = 1_000_000_000
@@ -34,6 +36,8 @@ class TimingConfig:
             confidence_gain=self.confidence_gain,
             leader_min_confidence=self.leader_min_confidence,
             drag_lost_grace_ns=int(self.drag_lost_grace_s * s),
+            repeat_window_ns=int(self.repeat_window_s * s),
+            repeat_slide=self.repeat_slide,
         )
 
 
@@ -117,8 +121,8 @@ class Config:
 DEFAULT_BINDINGS: list[dict[str, Any]] = [
     {"gesture": "h_left", "action": {"kind": "key", "name": "Cmd+Tab", "chord": "cmd+tab"}},
     {"gesture": "h_right", "action": {"kind": "key", "name": "Cmd+Shift+Tab", "chord": "cmd+shift+tab"}},
-    {"gesture": "point_up", "action": {"kind": "key", "name": "Previous tab", "chord": "cmd+shift+["}},
-    {"gesture": "two_up", "action": {"kind": "key", "name": "Next tab", "chord": "cmd+shift+]"}},
+    {"gesture": "point_up", "action": {"kind": "key", "name": "Previous tab", "chord": "cmd+shift+[", "repeat": True}},
+    {"gesture": "two_up", "action": {"kind": "key", "name": "Next tab", "chord": "cmd+shift+]", "repeat": True}},
 ]
 
 
