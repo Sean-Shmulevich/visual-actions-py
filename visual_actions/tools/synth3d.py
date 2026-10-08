@@ -609,6 +609,7 @@ def sample(
     pose = POSE_FUNCS[cls](rng)
     pose.hand = hand
     local = forward_kinematics(pose)
+    raw = render(local, random_view(rng, cls, preset), rng)  # fallback if every attempt is rejected
     for _attempt in range(40):
         if cls == "none" and preset is None and pose.sideways:
             view = random_view(rng, rng.choice(["h_left", "h_right"]))

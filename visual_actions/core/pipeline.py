@@ -39,7 +39,8 @@ class Pipeline:
         self.pinch = PinchDetector(d.pinch_on, d.pinch_off, d.debounce_frames)
         if mover is None:
             mover = AutomationMover(dispatcher.automation)
-        sw, sh = mover.screen_size() if hasattr(mover, "screen_size") else (1440, 900)
+        size = getattr(mover, "screen_size", None)
+        sw, sh = size() if callable(size) else (1440, 900)
         pointer = SmoothedPointer(
             PointerMap(sw, sh, ReachBox(d.box_x0, d.box_x1, d.box_y0, d.box_y1), d.depth_gain, d.ref_hand_scale),
             d.smooth_min_cutoff,

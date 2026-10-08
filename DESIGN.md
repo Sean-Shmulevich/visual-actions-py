@@ -434,6 +434,19 @@ SKILL.md` documents the format for agents.
 Minimum data for v0.1: 2,000 frames each of `h_left`, `h_right`, `open_palm`,
 `fist`, `none`, from at least two sessions on different days.
 
+Data sources as of 2026-10-08 night:
+- User sessions: two guided sessions (five classes) plus one for point_up/two_up.
+- Public: HaGRIDv2 official landmark annotations (val split, 2,000 frames per class
+  after mapping: palm/stop→open_palm, fist, one→point_up, peace→two_up, ok→pinch,
+  the rest→none) via `tools/import_public.py`. Third-person, frontal, no z.
+- Synthetic: `tools/synth3d.py`, a kinematic hand with per-class view presets
+  fitted to the real centroids. Synthetic-only training scores 0.72 on the real
+  recordings (on par with real cross-session), ceiling set by label ambiguity in
+  the user's "none" takes (sideways V-signs that share the H sign's shape).
+- Result: 21,946 frames, 8 classes incl. `pinch`; held-out on the user's newest
+  sessions 0.89 (fist 0.92, h_left 0.88, h_right 0.93, none 0.68, open_palm 0.97,
+  point_up 0.97, two_up 0.99) with z dropped from the features.
+
 Gesture set as of 2026-10-08 evening: `open_palm` (leader), `fist` (escape),
 `h_left`, `h_right`, `point_up`, `two_up`, `none`. Seven classes, 9,786 frames, 12
 sessions; the model classifies 99 % of frames in every recording correctly.
