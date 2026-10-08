@@ -150,7 +150,7 @@ def run_swipe(cfg: Config, tmp: Path, trials: int = 30, seed: int = 0) -> None:
                     else:
                         want = "Desktop right" if direction > 0 else "Desktop left"  # user-right swipe -> "Desktop left"? see note
                         # swipe to the user's right = direction RIGHT -> binding *_swipe_right -> "Desktop left"
-                        want = "Desktop left" if direction > 0 else "Desktop right"
+                        want = "Desktop right" if direction > 0 else "Desktop left"
                         counts["fired" if r.fired[0].action.name == want else "wrong-dir"] += 1
                 print(f"{shape:9s} {noise:6.3f} {rot:5.0f}  {counts['fired']:6d} {counts['wrong-dir']:9d} {counts['none']:5d}")
 

@@ -17,8 +17,8 @@ def test_blade_rule_distinct_from_open_palm():
 
 def test_blade_swipe_bindings_exist():
     b = default_config().bindings()
-    assert b.lookup("window", "blade_swipe_left").arg("chord") == "ctrl+right"
-    assert b.lookup("window", "blade_swipe_right").arg("chord") == "ctrl+left"
+    assert b.lookup("window", "blade_swipe_left").arg("chord") == "ctrl+left"
+    assert b.lookup("window", "blade_swipe_right").arg("chord") == "ctrl+right"
 
 
 def make(break_tokens=2):

@@ -133,6 +133,6 @@ def test_swipe_in_idle_is_ignored():
 
 def test_default_bindings_have_three_finger_desktop_swipes():
     b = default_config().bindings()
-    assert b.lookup("window", "three_up_swipe_left").arg("chord") == "ctrl+right"
-    assert b.lookup("window", "three_up_swipe_right").arg("chord") == "ctrl+left"
+    assert b.lookup("window", "three_up_swipe_left").arg("chord") == "ctrl+left"
+    assert b.lookup("window", "three_up_swipe_right").arg("chord") == "ctrl+right"
     assert b.lookup("window", "three_up_swipe_left").arg("repeat") == "True"

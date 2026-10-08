@@ -44,7 +44,7 @@ def test_saved_config_keeps_new_default_bindings(tmp_path: Path):
     )
     b = load_config(p).bindings()
     assert b.lookup("window", "h_left").name == "Custom"  # user override wins
-    assert b.lookup("window", "three_up_swipe_left").arg("chord") == "ctrl+right"  # default kept
+    assert b.lookup("window", "three_up_swipe_left").arg("chord") == "ctrl+left"  # default kept
     assert b.lookup("window", "two_up").arg("repeat") == "True"
 
 
