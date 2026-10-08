@@ -48,6 +48,7 @@ class CameraConfig:
 @dataclass
 class RecognizerConfig:
     model: str | None = None  # path to a joblib; None = rules only
+    rule_min: float = 0.9  # a rule needs this confidence to override the model
     smoothing_ms: int = 250
     still_px: float = 12.0
     ambiguous_low: float = 0.45

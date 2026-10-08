@@ -22,9 +22,11 @@ def test_rules_classify_synthetic_poses(name):
         assert conf > 0.5
 
 
-def test_rules_left_hand_h_left_is_still_left():
-    hf = hand_frame(H_LEFT, 0, hand=Hand.LEFT, mirror_to_raw=False)
-    assert RuleRecognizer().classify(hf)[0] == H_LEFT
+def test_rules_direction_ignores_handedness_label():
+    pts = hand_frame(H_RIGHT, 0, hand=Hand.RIGHT, mirror_to_raw=False).landmarks
+    from visual_actions.core.types import HandFrame
+
+    assert RuleRecognizer().classify(HandFrame(0, Hand.LEFT, pts, 1.0))[0] == H_RIGHT
 
 
 def test_smoother_emits_once_per_window_and_detects_motion():

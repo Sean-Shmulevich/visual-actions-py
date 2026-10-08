@@ -218,9 +218,13 @@ true (default on laptops, off for a rear-facing camera; config).
 2. Scale by the wrist → middle-MCP distance.
 3. Rotate so the wrist → middle-MCP vector points up (removes hand roll; the
    *direction* of the H sign is then recovered separately as a feature).
-4. Mirror left hands to right so one model covers both.
-5. Append the pre-rotation angle of wrist → index-tip as two features (cos, sin), so
-   `h_left` vs `h_right` is learnable.
+4. Do NOT mirror by handedness. MediaPipe labelled 854 of 854 frames of a right-hand
+   sideways H as "left" (2026-10-08); mirroring on that label inverted every
+   direction. v0.1 is right-hand data only; left-handed support means recording
+   left-hand sessions.
+5. Append the user-frame direction of wrist → index-tip as two features (cos, sin),
+   taken from the unmirrored landmarks, so `h_left` vs `h_right` is learnable and
+   immune to the handedness label.
 
 The same function feeds the recorder, the trainer and the live recognizer. A test
 asserts that recording and live paths produce identical vectors for the same frame.
@@ -385,6 +389,12 @@ SKILL.md` documents the format for agents.
 
 Minimum data for v0.1: 2,000 frames each of `h_left`, `h_right`, `open_palm`,
 `fist`, `none`, from at least two sessions on different days.
+
+Status 2026-10-08: one guided session recorded (~890 frames per gesture, 207 none).
+Logistic regression on the 65-float vector: 0.999 train accuracy, every recording
+classified correctly, and the first live arm-and-fire succeeded with the model
+(`--dry`). No held-out score yet; the trainer prints one automatically once a second
+session per class exists. `none` needs far more variety than one 30 s take.
 
 ## 17. Testing
 

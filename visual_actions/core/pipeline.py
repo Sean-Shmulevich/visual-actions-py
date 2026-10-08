@@ -68,4 +68,4 @@ def build_recognizer(config: Config) -> Recognizer:
         p = Path(config.recognizer.model)
         if p.exists():
             model = SklearnRecognizer(p)
-    return CompositeRecognizer(rules, model)
+    return CompositeRecognizer(rules, model, rule_min=config.recognizer.rule_min)

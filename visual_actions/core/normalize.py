@@ -29,9 +29,9 @@ def to_user_frame(hf: HandFrame, mirror: bool) -> HandFrame:
 
 @dataclass(frozen=True)
 class Canonical:
-    """Landmarks translated to the wrist, scaled by wrist->middle MCP, left hands mirrored.
+    """Landmarks translated to the wrist, scaled by wrist->middle MCP.
 
-    Not rotated, so direction rules (pointing left) can read it directly.
+    Not rotated and not mirrored, so direction rules (pointing left) can read it directly.
     `pts` is (21, 3) in user-frame orientation (+x user's right, +y down).
     """
 
@@ -46,17 +46,32 @@ def canonical(hf: HandFrame) -> Canonical:
     scale = float(np.linalg.norm(pts[MIDDLE_MCP][:2]))
     scale = max(scale, 1e-6)
     pts = pts / scale
-    if hf.hand is Hand.LEFT:
-        pts[:, 0] = -pts[:, 0]
+    # Deliberately NOT mirrored by handedness: MediaPipe labelled 854/854 frames of a
+    # right-hand sideways H as "left" (2026-10-08). v0.1 is right-hand data only;
+    # left-handed support means recording left-hand sessions, not a flip.
     return Canonical(pts=pts, scale=scale, hand=hf.hand)
 
 
+def pointing_direction(hf: HandFrame) -> tuple[float, float]:
+    """Unit vector wrist -> index tip in the user frame, NOT mirrored by handedness.
+
+    MediaPipe's handedness label is unreliable on sideways poses, so anything that
+    means 'left' or 'right' to the user must come from the raw user-frame geometry.
+    """
+    w, t = hf.landmarks[WRIST], hf.landmarks[INDEX_TIP]
+    vx, vy = t.x - w.x, t.y - w.y
+    n = math.hypot(vx, vy)
+    if n < 1e-9:
+        return (0.0, 0.0)
+    return (vx / n, vy / n)
+
+
 def features(hf: HandFrame) -> np.ndarray:
-    """Rotation-invariant 63 floats plus the pre-rotation index direction as (cos, sin)."""
+    """Rotation-invariant 63 floats plus the index direction as (cos, sin)."""
     c = canonical(hf)
     pts = c.pts.copy()
-    v = pts[INDEX_TIP][:2]
-    angle = math.atan2(v[1], v[0])
+    cos_a, sin_a = pointing_direction(hf)
+    angle = math.atan2(sin_a, cos_a)
     up = pts[MIDDLE_MCP][:2]
     rot = -math.atan2(up[0], -up[1])  # rotate so wrist->middle MCP points up (-y)
     cos_r, sin_r = math.cos(rot), math.sin(rot)

@@ -18,6 +18,12 @@ def main() -> int:
     args = ap.parse_args()
 
     cfg = load_config(args.config or config_path())
+    if cfg.recognizer.model is None:
+        from .paths import models_dir
+
+        trained = models_dir() / "gestures.joblib"
+        if trained.exists():
+            cfg.recognizer.model = str(trained)
     if args.replay:
         from .tools.replay import replay
 
