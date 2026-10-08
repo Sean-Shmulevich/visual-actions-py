@@ -36,11 +36,6 @@ class TimingConfig:
     repeat_window_s: float = 1.5  # after a repeatable action, a sideways slide of the same shape fires it again within this
     resume_grace_s: float = 0.6  # hand back mid-suspension: wait this long for the pinch before dropping
     repeat_slide: float = 0.10  # the slide: wrist must move this fraction of the frame width sideways
-    # Interruptions (hand off-screen or a tracker blip). The fist is still the cancel; these only decide
-    # how long an interrupted interaction waits for the hand to come back.
-    keep_armed_on_lost: bool = True  # an armed or repeat window keeps its own deadline across a hand loss (see modes.py)
-    lost_blip_ms: int = 150  # a loss shorter than this keeps the token smoother and pinch detector state (presence already debounces ~100 ms)
-    hold_lost_grace_s: float = 0.0  # a loss shorter than this pauses the hold; 0 = reset (STRICT); FAST sets 0.3
 
     def to_timing(self) -> Timing:
         s = 1_000_000_000
@@ -143,8 +138,6 @@ class DragConfig:
 
 
 @dataclass
-class NamespaceConfig:
-@dataclass
 class PresenceConfig:
     lost_frames: int = 3  # consecutive frames without a usable hand before it is declared lost
     # Fast-exit predictor (core/presence.py): declare the hand lost at once, skipping the
@@ -159,6 +152,8 @@ class PresenceConfig:
     fast_exit_bottom: bool = False  # also predict the pinch point leaving through the bottom (hands rest there: noisy)
 
 
+@dataclass
+class NamespaceConfig:
     leader: str = "open_palm"
     bindings: list[dict[str, Any]] = field(default_factory=list)
 
