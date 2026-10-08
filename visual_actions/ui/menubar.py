@@ -85,7 +85,8 @@ class VisualActionsApp(rumps.App):
     def _system_volume(self) -> tuple[float, bool] | None:
         # looked up on each call: a reload swaps self.services
         read = getattr(self.services.automation, "volume", None)
-        return read() if callable(read) else None
+        result = read() if callable(read) else None
+        return result  # type: ignore[return-value]
 
     # -- lifecycle ----------------------------------------------------------
 
