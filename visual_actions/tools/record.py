@@ -135,16 +135,17 @@ def main() -> int:
     tracker = MediaPipeTracker(model_path())
     services.camera.open()
     preview = None if args.no_preview else Preview()
-    stamp = f"{datetime.now():%Y%m%d-%H%M%S}"
+    stamp = f"{datetime.now():%Y%m%d-%H%M%S}"  # noqa: DTZ005 - local time is what a user expects in a filename
     try:
         if args.guided:
             base = args.out or datasets_dir()
             say(f"Guided recording. {len(GUIDED)} poses, {args.seconds:.0f} seconds each. Watch the preview window.")
             time.sleep(2)
             for label, instructions in GUIDED:
-                say(f"Next: {label.replace('_', ' ')}. {instructions}")
+                seconds = args.seconds * (2 if label == "none" else 1)  # 'none' needs variety
+                say(f"Next: {label.replace('_', ' ')}, {seconds:.0f} seconds. {instructions}")
                 time.sleep(3)
-                record_one(services.camera, tracker, preview, label, args.seconds, args.countdown, base / label / f"{stamp}.jsonl")
+                record_one(services.camera, tracker, preview, label, seconds, args.countdown, base / label / f"{stamp}.jsonl")
                 time.sleep(1)
             say("All done.")
         else:

@@ -42,6 +42,12 @@ class ModeChanged:
 
 
 @dataclass(frozen=True)
+class HoldProgress:
+    t_ns: int
+    fraction: float  # 0..1 of the leader hold, confidence-weighted
+
+
+@dataclass(frozen=True)
 class ActionFired:
     t_ns: int
     action: Action
@@ -54,7 +60,7 @@ class Tick:
     t_ns: int
 
 
-Event = FrameCaptured | HandSeen | HandLost | TokenEmitted | ModeChanged | ActionFired | Tick
+Event = FrameCaptured | HandSeen | HandLost | TokenEmitted | ModeChanged | HoldProgress | ActionFired | Tick
 Handler = Callable[[Any], None]
 
 

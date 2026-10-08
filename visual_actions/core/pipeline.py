@@ -35,6 +35,8 @@ class Pipeline:
             bindings=bindings if bindings is not None else config.bindings(),
             timing=config.timing.to_timing(),
             fire=self._fire,
+            fire_evidence=config.recognizer.fire_evidence,
+            min_token_confidence=config.recognizer.min_token_confidence,
         )
         bus.subscribe(HandSeen, self._on_hand_seen)
         bus.subscribe(HandLost, self._on_hand_lost)

@@ -38,7 +38,7 @@ class Dispatcher:
                 raise NotImplementedError("window actions arrive with the AX driver")
             else:
                 raise ValueError(f"unknown action kind {action.kind}")
-        except Exception as exc:  # the overlay shows failures; the loop must not die
+        except Exception as exc:  # noqa: BLE001 - the overlay shows failures; the loop must not die
             ok, message = False, f"{type(exc).__name__}: {exc}"
         self.bus.publish(ActionFired(t_ns=t_ns, action=action, ok=ok, message=message))
 

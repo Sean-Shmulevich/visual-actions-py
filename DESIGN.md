@@ -184,16 +184,16 @@ Sum ≈ 110 ms. If the tick is too coarse, drop to 10 ms; it is a config value.
 
 ## 6. Tier 0 gate (`core/gate.py`)
 
-`HandGate.open(frame_bgr) -> bool`. `MotionSkinGate`:
-1. Downscale to 160 px wide.
-2. Skin mask in YCrCb (Cr 133–173, Cb 77–127), morphological open.
-3. Open if the largest skin blob area > 2 % of the frame, or frame difference vs the
-   previous frame > threshold inside that blob.
-4. Hysteresis: stays open for 500 ms after the last positive so the tracker does not
-   flap.
+`HandGate.open(frame_bgr, t_ns) -> bool` plus `notify(t_ns, hand_seen)`. A skin
+mask alone opened on 99 % of frames (face, desk, walls), so `MotionGate` is
+motion-driven with tracker feedback:
+1. Downscale to 160 px wide, grey, blur.
+2. Open when ≥ 0.4 % of pixels changed by more than 24 levels since the last frame.
+3. Stay open for 1.5 s after the last motion or the last frame where the tracker
+   reported a hand (`notify`), so a still hand keeps the tracker running.
 
-Cheap, naive, and deliberately replaceable. Its job is only to keep MediaPipe off an
-empty desk.
+Measured: 0.14 ms per frame; empty still desk ≈ 0 motion; with no hand present the
+tracker runs on 14–39 % of frames (camera auto-exposure and the user moving).
 
 ## 7. Tier 1 tracker (`core/tracker.py`)
 
@@ -282,10 +282,23 @@ ANY       --fist held 1.0 s--> IDLE (escape)
 ANY       --HandLost for 1.5 s--> IDLE (escape)
 ```
 
-Implemented as one class per state with `on_token(tok) -> State` and
-`on_tick(t) -> State`; the engine publishes `ModeChanged` on every transition and
-`ActionFired` after dispatch. No state reads the clock itself; time comes in on
-`Tick`, which is what makes the engine replayable and testable with fake time.
+Implemented as one engine with `on_token`, `on_hand_lost`, `on_tick`; it publishes
+`ModeChanged` on every transition, `HoldProgress` while holding, and the dispatcher
+publishes `ActionFired`. No state reads the clock itself; time comes in on tokens
+and `Tick`, which is what makes the engine replayable and testable with fake time.
+
+**Confidence-weighted timing (2026-10-08).** Both phases accumulate evidence
+rather than wall-clock time, so the system speeds up when it is sure and stalls
+when it is not:
+
+- Hold: each palm token adds `dt * rate(c)` where `rate(c) = clamp((c - 0.5) / 0.5,
+  -1, 1) * confidence_gain`. At gain 1.5 a confident palm arms in ~1.3 s, a 0.75
+  palm at half speed, 0.5 stalls, below 0.5 drains. A moving palm pauses (rate 0).
+  The overlay ring draws this evidence fraction, not elapsed time.
+- Fire: tokens for a bound gesture add their confidence to a running mass; the
+  action fires when mass ≥ `fire_evidence` (0.9). One sure token fires at once, two
+  0.5 tokens fire on the second, tokens under `min_token_confidence` (0.3) never
+  count. Switching gesture restarts the mass.
 
 ## 12. Bindings and config (`core/bindings.py`, `core/config.py`)
 

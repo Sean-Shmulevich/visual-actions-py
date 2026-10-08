@@ -49,7 +49,6 @@ def main() -> int:
     import joblib
     from sklearn.linear_model import LogisticRegression
     from sklearn.metrics import classification_report, confusion_matrix
-    from sklearn.model_selection import GroupShuffleSplit
     from sklearn.neural_network import MLPClassifier
     from sklearn.pipeline import make_pipeline
     from sklearn.preprocessing import StandardScaler
@@ -69,11 +68,15 @@ def main() -> int:
         )
         return make_pipeline(StandardScaler(), clf)
 
-    # Held-out evaluation by session when there is more than one session per class.
-    sessions_per_class = Counter(lbl.split("/")[0] for lbl in set(g))
-    if all(n >= 2 for n in sessions_per_class.values()):
-        split = GroupShuffleSplit(n_splits=1, test_size=0.3, random_state=0)
-        tr, te = next(split.split(x, y, g))
+    # Held-out evaluation: the newest session of EVERY class is the test set, so each
+    # class appears on both sides and the score reflects a new day, not new frames.
+    sessions_per_class: dict[str, list[str]] = {}
+    for grp in sorted(set(g)):
+        sessions_per_class.setdefault(grp.split("/")[0], []).append(grp)
+    if all(len(s) >= 2 for s in sessions_per_class.values()):
+        test_groups = {s[-1] for s in sessions_per_class.values()}
+        te = np.array([grp in test_groups for grp in g])
+        tr = ~te
         m = build().fit(x[tr], y[tr])
         pred = m.predict(x[te])
         labels = sorted(set(y))

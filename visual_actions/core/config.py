@@ -20,6 +20,7 @@ class TimingConfig:
     escape_lost_s: float = 1.5
     popup_ms: int = 900
     tick_ms: int = 50
+    confidence_gain: float = 1.5  # hold fill rate at confidence 1.0 (1.0 = wall clock)
 
     def to_timing(self) -> Timing:
         s = 1_000_000_000
@@ -28,6 +29,7 @@ class TimingConfig:
             command_timeout_ns=int(self.command_timeout_s * s),
             escape_fist_ns=int(self.escape_fist_s * s),
             escape_lost_ns=int(self.escape_lost_s * s),
+            confidence_gain=self.confidence_gain,
         )
 
 
@@ -49,6 +51,8 @@ class CameraConfig:
 class RecognizerConfig:
     model: str | None = None  # path to a joblib; None = rules only
     rule_min: float = 0.9  # a rule needs this confidence to override the model
+    fire_evidence: float = 0.9  # summed token confidence needed to fire: one sure token, or several weak ones
+    min_token_confidence: float = 0.3  # tokens below this never count toward firing
     smoothing_ms: int = 250
     still_px: float = 12.0
     ambiguous_low: float = 0.45

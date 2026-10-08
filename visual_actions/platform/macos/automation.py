@@ -91,7 +91,7 @@ class MacAutomation:
         else:
             return NativeResult(ok=False, stderr=f"unsupported script type {ext}")
         try:
-            p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_s)
+            p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_s, check=False)
         except subprocess.TimeoutExpired:
             return NativeResult(ok=False, stderr=f"timed out after {timeout_s}s")
         return NativeResult(ok=p.returncode == 0, stdout=p.stdout.strip(), stderr=p.stderr.strip())

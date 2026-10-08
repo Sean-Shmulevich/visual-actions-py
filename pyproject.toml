@@ -44,5 +44,11 @@ typeCheckingMode = "standard"
 root = "visual_actions/platform/macos"
 reportAttributeAccessIssue = false
 
+[[tool.pyright.executionEnvironments]]
+root = "visual_actions/ui"
+reportAttributeAccessIssue = false
+reportCallIssue = false
+reportArgumentType = false
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
