@@ -7,7 +7,7 @@ from visual_actions.core.types import Action, ActionKind, Binding, Hand, Token
 
 S = 1_000_000_000
 CMD_TAB = Action(ActionKind.KEY, "Cmd+Tab", (("chord", "cmd+tab"),))
-TIMING = Timing(leader_hold_ns=2 * S, command_timeout_ns=5 * S, escape_fist_ns=1 * S, escape_lost_ns=int(1.5 * S), confidence_gain=1.0)
+TIMING = Timing(leader_hold_ns=2 * S, command_timeout_ns=5 * S, escape_fist_ns=1 * S, escape_lost_ns=int(1.5 * S), confidence_gain=1.0, leader_min_confidence=0.8)
 
 
 def make(timing: Timing = TIMING, **kw):
@@ -36,6 +36,15 @@ def arm(eng, conf=1.0):
     assert eng.state == ARMED
 
 
+def test_unsure_palm_does_not_start_or_fill_the_hold():
+    eng, _, _, _ = make(Timing(leader_hold_ns=2 * S, confidence_gain=1.0, leader_min_confidence=0.8))
+    eng.on_token(tok("open_palm", 0, conf=0.7))
+    assert eng.state == IDLE
+    palm_stream(eng, 0, 2.5, conf=0.9)  # rate 0.8: 2.5 s of wall clock is 2.0 s of evidence
+    eng.on_tick(int(2.55 * S))
+    assert eng.state == ARMED
+
+
 def test_hold_rate_curve():
     assert hold_rate(1.0, 1.0) == 1.0
     assert hold_rate(0.75, 1.0) == 0.5
@@ -60,21 +69,22 @@ def test_sure_palm_arms_early_with_gain():
     assert eng.state == ARMED
 
 
-def test_hesitant_palm_takes_longer():
+def test_hesitant_palm_stalls_until_sure_again():
     eng, _, _, _ = make()
-    palm_stream(eng, 0, 2.0, conf=0.75)  # rate 0.5: 2 s of wall clock is 1 s of evidence
-    eng.on_tick(int(2.05 * S))
-    assert eng.state == HOLDING
-    palm_stream(eng, 2.25, 4.0, conf=0.75)
-    eng.on_tick(int(4.05 * S))
+    palm_stream(eng, 0, 1.0)  # sure: 1 s of evidence
+    palm_stream(eng, 1.25, 3.0, conf=0.75)  # under leader_min: no fill, no drain
+    eng.on_tick(int(3.05 * S))
+    assert eng.state == HOLDING and abs(eng.hold_evidence_ns - 1.0 * S) < 1e-6
+    palm_stream(eng, 3.25, 4.25)
+    eng.on_tick(int(4.3 * S))
     assert eng.state == ARMED
 
 
-def test_unsure_palm_drains_and_never_arms():
+def test_unsure_palm_never_starts_the_hold():
     eng, _, _, _ = make()
     palm_stream(eng, 0, 10.0, conf=0.4)
     eng.on_tick(int(10.05 * S))
-    assert eng.state == HOLDING and eng.hold_evidence_ns == 0.0
+    assert eng.state == IDLE
 
 
 def test_hold_progress_events_are_published():

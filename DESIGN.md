@@ -305,7 +305,7 @@ when it is not:
 ```toml
 # ~/Library/Application Support/visual-actions/config.toml
 [timing]
-leader_hold_s = 1.4
+leader_hold_s = 1.1
 command_timeout_s = 5.0
 escape_fist_s = 1.0
 escape_lost_s = 1.5

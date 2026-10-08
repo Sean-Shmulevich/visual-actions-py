@@ -29,7 +29,9 @@ GUIDED = [
     ("fist", "Closed fist. Turn it slowly: knuckles to the camera, then thumb side, then palm side."),
     ("h_left", "Index and middle finger together pointing to your left, thumb tucked, ring and pinky folded."),
     ("h_right", "Same H sign, but pointing to your right."),
-    ("none", "Anything else: relax the hand, point one finger, wave, scratch your head, rest it on the desk."),
+    ("point_up", "One finger: index pointing straight up, the rest folded, thumb tucked."),
+    ("two_up", "Two fingers: index and middle together pointing straight up, the rest folded."),
+    ("none", "Anything else: relax the hand, wave, scratch your head, rest it on the desk, use both hands."),
 ]
 
 CONNECTIONS = [
@@ -122,6 +124,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--label")
     ap.add_argument("--guided", action="store_true", help="record every v0.1 pose in sequence")
+    ap.add_argument("--only", nargs="*", help="guided: record only these labels")
     ap.add_argument("--seconds", type=float, default=30.0)
     ap.add_argument("--countdown", type=float, default=5.0)
     ap.add_argument("--no-preview", action="store_true")
@@ -139,9 +142,10 @@ def main() -> int:
     try:
         if args.guided:
             base = args.out or datasets_dir()
-            say(f"Guided recording. {len(GUIDED)} poses, {args.seconds:.0f} seconds each. Watch the preview window.")
+            say(f"Guided recording. {len([1 for lb, _ in GUIDED if not args.only or lb in args.only])} poses, {args.seconds:.0f} seconds each. Watch the preview window.")
             time.sleep(2)
-            for label, instructions in GUIDED:
+            poses = [(lb, ins) for lb, ins in GUIDED if not args.only or lb in args.only]
+            for label, instructions in poses:
                 seconds = args.seconds * (2 if label == "none" else 1)  # 'none' needs variety
                 say(f"Next: {label.replace('_', ' ')}, {seconds:.0f} seconds. {instructions}")
                 time.sleep(3)

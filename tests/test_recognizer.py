@@ -6,6 +6,8 @@ from visual_actions.core.recognizer import (
     H_RIGHT,
     NONE,
     OPEN_PALM,
+    POINT_UP,
+    TWO_UP,
     RuleRecognizer,
     Smoother,
 )
@@ -13,7 +15,7 @@ from visual_actions.core.types import Hand
 from visual_actions.tools.synth import hand_frame
 
 
-@pytest.mark.parametrize("name", [OPEN_PALM, FIST, H_LEFT, H_RIGHT, NONE])
+@pytest.mark.parametrize("name", [OPEN_PALM, FIST, H_LEFT, H_RIGHT, POINT_UP, TWO_UP, NONE])
 def test_rules_classify_synthetic_poses(name):
     hf = hand_frame(name, 0, mirror_to_raw=False)
     got, conf = RuleRecognizer().classify(hf)

@@ -34,6 +34,8 @@ OPEN_PALM = "open_palm"
 FIST = "fist"
 H_LEFT = "h_left"
 H_RIGHT = "h_right"
+POINT_UP = "point_up"
+TWO_UP = "two_up"
 
 FINGERS = (
     (INDEX_MCP, INDEX_PIP, INDEX_TIP),
@@ -86,16 +88,20 @@ class RuleRecognizer:
             return OPEN_PALM, min(ext)
         if all_curl:
             return FIST, 1.0 - max(ext)
-        if index >= self.extended and middle >= self.extended and ring <= self.curled and pinky <= self.curled:
-            v = c.pts[INDEX_TIP][:2] - c.pts[INDEX_MCP][:2]
-            n = float(np.linalg.norm(v))
-            if n > 1e-6:
-                cos_left = -v[0] / n
+        v = c.pts[INDEX_TIP][:2] - c.pts[INDEX_MCP][:2]
+        n = float(np.linalg.norm(v))
+        if n > 1e-6 and index >= self.extended and ring <= self.curled and pinky <= self.curled:
+            cos_left, cos_up = -v[0] / n, -v[1] / n
+            if middle >= self.extended:
                 conf = min(index, middle, 1.0 - ring, 1.0 - pinky)
                 if cos_left >= self.direction_cos:
                     return H_LEFT, conf
                 if -cos_left >= self.direction_cos:
                     return H_RIGHT, conf
+                if cos_up >= self.direction_cos:
+                    return TWO_UP, conf
+            elif middle <= self.curled and cos_up >= self.direction_cos:
+                return POINT_UP, min(index, 1.0 - middle, 1.0 - ring, 1.0 - pinky)
         return NONE, 0.5
 
 

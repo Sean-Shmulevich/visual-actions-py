@@ -36,4 +36,4 @@ def test_config_round_trip(tmp_path: Path):
 
 
 def test_missing_config_gives_defaults(tmp_path: Path):
-    assert load_config(tmp_path / "nope.toml").timing.leader_hold_s == 1.4
+    assert load_config(tmp_path / "nope.toml").timing.leader_hold_s == 1.1

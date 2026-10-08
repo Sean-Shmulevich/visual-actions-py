@@ -14,13 +14,14 @@ from .types import Action, ActionKind, Binding
 
 @dataclass
 class TimingConfig:
-    leader_hold_s: float = 1.4
+    leader_hold_s: float = 1.1
     command_timeout_s: float = 5.0
     escape_fist_s: float = 1.0
     escape_lost_s: float = 1.5
     popup_ms: int = 900
     tick_ms: int = 50
     confidence_gain: float = 1.5  # hold fill rate at confidence 1.0 (1.0 = wall clock)
+    leader_min_confidence: float = 0.8  # palm tokens below this neither start nor fill the hold
 
     def to_timing(self) -> Timing:
         s = 1_000_000_000
@@ -30,6 +31,7 @@ class TimingConfig:
             escape_fist_ns=int(self.escape_fist_s * s),
             escape_lost_ns=int(self.escape_lost_s * s),
             confidence_gain=self.confidence_gain,
+            leader_min_confidence=self.leader_min_confidence,
         )
 
 
@@ -84,6 +86,8 @@ class Config:
 DEFAULT_BINDINGS: list[dict[str, Any]] = [
     {"gesture": "h_left", "action": {"kind": "key", "name": "Cmd+Tab", "chord": "cmd+tab"}},
     {"gesture": "h_right", "action": {"kind": "key", "name": "Cmd+Shift+Tab", "chord": "cmd+shift+tab"}},
+    {"gesture": "point_up", "action": {"kind": "key", "name": "Mission Control", "chord": "ctrl+up"}},
+    {"gesture": "two_up", "action": {"kind": "key", "name": "App Exposé", "chord": "ctrl+down"}},
 ]
 
 

@@ -39,9 +39,15 @@ def pose(name: str) -> list[tuple[float, float]]:
     elif name == "h_right":
         thumb = THUMB_TUCKED
         fingers = {"index": (right, True), "middle": (right, True), "ring": (up, False), "pinky": (up, False)}
-    elif name == "none":  # index only, pointing up
-        thumb = THUMB_OUT
+    elif name == "point_up":
+        thumb = THUMB_TUCKED
         fingers = {"index": (up, True), "middle": (up, False), "ring": (up, False), "pinky": (up, False)}
+    elif name == "two_up":
+        thumb = THUMB_TUCKED
+        fingers = {"index": (up, True), "middle": (up, True), "ring": (up, False), "pinky": (up, False)}
+    elif name == "none":  # index and pinky out, nothing we bind
+        thumb = THUMB_OUT
+        fingers = {"index": (up, True), "middle": (up, False), "ring": (up, False), "pinky": (up, True)}
     else:
         raise ValueError(name)
     pts: list[tuple[float, float]] = [(0.0, 0.0)] + thumb

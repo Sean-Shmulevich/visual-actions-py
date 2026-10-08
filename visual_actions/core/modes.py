@@ -37,6 +37,7 @@ class Timing:
     escape_fist_ns: int = 1_000_000_000
     escape_lost_ns: int = 1_500_000_000
     confidence_gain: float = 1.5  # fill rate at confidence 1.0, relative to wall clock
+    leader_min_confidence: float = 0.8  # palm tokens below this neither start nor fill the hold
 
 
 def hold_rate(confidence: float, gain: float) -> float:
@@ -92,7 +93,7 @@ class ModeEngine:
             self._fist_since_ns = None
 
         if self.state == IDLE:
-            if tok.name == OPEN_PALM and tok.still:
+            if tok.name == OPEN_PALM and tok.still and tok.confidence >= self.timing.leader_min_confidence:
                 self.hold_evidence_ns = 0.0
                 self._last_palm_ns = tok.t_ns
                 self._go(HOLDING, tok.t_ns)
@@ -102,7 +103,8 @@ class ModeEngine:
                 return
             dt = 0 if self._last_palm_ns is None else tok.t_ns - self._last_palm_ns
             self._last_palm_ns = tok.t_ns
-            rate = hold_rate(tok.confidence, self.timing.confidence_gain) if tok.still else 0.0
+            sure = tok.still and tok.confidence >= self.timing.leader_min_confidence
+            rate = hold_rate(tok.confidence, self.timing.confidence_gain) if sure else 0.0
             self.hold_evidence_ns = max(0.0, self.hold_evidence_ns + dt * rate)
             self._hold_rate = rate
             hold = self.timing.leader_hold_ns
