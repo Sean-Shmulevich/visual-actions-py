@@ -67,6 +67,7 @@ class TimingConfig:
 class FeedbackConfig:
     audio: bool = True
     popup: bool = True
+    preview: bool = True  # debug window: live camera with the hand skeleton (recording is unaffected)
     cursor: bool = True  # on-screen marker during pinch activity (dragging, or a brief ring on a missed pinch)
     cursor_while_armed: bool = False  # also track the hand as a ring the whole time the window is armed
     record_sessions: bool = True  # every start writes sessions/<stamp>/{video.mp4,events.log,landmarks.jsonl}
@@ -181,8 +182,10 @@ DEFAULT_BINDINGS: list[dict[str, Any]] = [
 # (toward the user's right or left) with the fingers pinched fires one of them.
 DEFAULT_MEDIA_BINDINGS: list[dict[str, Any]] = [
     {"gesture": "point_up", "action": {"kind": "media", "name": "Play/Pause", "verb": "play_pause"}},
-    {"gesture": "thumbs_up", "action": {"kind": "media", "name": "Next track", "verb": "next"}},
-    {"gesture": "thumbs_down", "action": {"kind": "media", "name": "Previous track", "verb": "prev"}},
+    # H sign pointing left = next, pointing right = previous (2026-10-08 takes: the model read
+    # every bin of both correctly). Thumbs up/down stay recognized but unbound; fist stays sacred.
+    {"gesture": "h_left", "action": {"kind": "media", "name": "Next track", "verb": "next"}},
+    {"gesture": "h_right", "action": {"kind": "media", "name": "Previous track", "verb": "prev"}},
     {"gesture": "pinch_right", "action": {"kind": "media", "name": "Volume up", "verb": "volume_up"}},
     {"gesture": "pinch_left", "action": {"kind": "media", "name": "Volume down", "verb": "volume_down"}},
 ]

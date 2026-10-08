@@ -17,8 +17,9 @@ from .face import FaceTracker, hand_face_overlap
 class CaptureThread:
     out_of_frame = staticmethod(PresenceFilter.out_of_frame)  # kept for callers/tests
 
-    def __init__(self, camera: CameraSource, q: queue.Queue, use_gate: bool = True, sink: object | None = None, face_veto: bool = True) -> None:
+    def __init__(self, camera: CameraSource, q: queue.Queue, use_gate: bool = True, sink: object | None = None, face_veto: bool = True, preview: object | None = None) -> None:
         self.face_veto = face_veto
+        self.preview = preview  # DebugPreview: annotated frames for the main thread to show
         self.camera = camera
         self.q = q
         self.sink = sink  # SessionRecorder-like: write_frame / write_hand / write_lost
@@ -55,12 +56,16 @@ class CaptureThread:
                 if self.sink is not None:
                     self.sink.write_frame(frame, t_ns)
                 if not self.gate.open(frame, t_ns):
+                    if self.preview is not None:
+                        self.preview.submit(frame, [], "gate closed")
                     pr = self.presence.gate_closed()
                     if pr.lost:
                         self._lost(t_ns, *pr.lost)
                     continue
                 hands = tracker.track(frame, t_ns)
                 self.tracked += 1
+                if self.preview is not None:
+                    self.preview.submit(frame, hands, "gate open")
                 pr = self.presence.update(hands[0] if hands else None, self.frames)
                 self.gate.notify(t_ns, pr.seen is not None)
                 if pr.seen is not None:

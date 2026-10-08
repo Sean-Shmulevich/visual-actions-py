@@ -94,8 +94,8 @@ def test_default_config_has_two_root_modes():
     assert cfg.leaders() == {OPEN_PALM: "window", TWO_UP: "media"}
     b = cfg.bindings()
     assert b.lookup("media", "point_up").arg("verb") == "play_pause"
-    assert b.lookup("media", "thumbs_up").arg("verb") == "next"
-    assert b.lookup("media", "thumbs_down").arg("verb") == "prev"
+    assert b.lookup("media", "h_left").arg("verb") == "next"
+    assert b.lookup("media", "h_right").arg("verb") == "prev"
     assert b.lookup("media", "pinch_right").arg("verb") == "volume_up"
     assert b.lookup("media", "pinch_left").arg("verb") == "volume_down"
     for unbound in ("open_palm", "h_left", "h_right", "two_up"):
@@ -108,7 +108,7 @@ def test_config_file_without_media_still_gets_it(tmp_path):
     p.write_text('[[namespaces.window.bindings]]\ngesture = "h_left"\naction = { kind = "key", name = "Custom", chord = "cmd+1" }\n')
     cfg = load_config(p)
     assert cfg.leaders() == {OPEN_PALM: "window", TWO_UP: "media"}
-    assert cfg.bindings().lookup("media", "thumbs_up").name == "Next track"
+    assert cfg.bindings().lookup("media", "h_left").name == "Next track"
 
 
 def test_config_file_can_rebind_the_media_leader(tmp_path):
@@ -116,7 +116,7 @@ def test_config_file_can_rebind_the_media_leader(tmp_path):
     p.write_text('[namespaces.media]\nleader = "h_right"\n')
     cfg = load_config(p)
     assert cfg.leaders() == {OPEN_PALM: "window", "h_right": "media"}
-    assert cfg.bindings().lookup("media", "thumbs_up").name == "Next track"  # default media bindings kept
+    assert cfg.bindings().lookup("media", "h_left").name == "Next track"  # default media bindings kept
 
 
 # -- mode engine ---------------------------------------------------------------
@@ -133,16 +133,14 @@ def test_peace_hold_arms_media_and_palm_hold_arms_window():
     assert eng.state == ARMED and eng.namespace == "window"
 
 
-def test_thumbs_change_tracks():
+def test_h_signs_change_tracks():
     eng, fired, _ = make()
     arm_media(eng)
-    eng.on_token(tok("thumbs_up", 1.5))
-    assert fired == ["Next track"] and eng.state == IDLE
-    eng.on_hand_lost(int(1.6 * S))
-    arm_media_at(eng, 2.0)
-    eng.on_token(tok("thumbs_down", 3.5, conf=0.5))  # a moderate thumbs needs two tokens
+    eng.on_token(tok("h_left", 1.5))
+    assert fired == ["Next track"] and eng.state == ARMED
+    eng.on_token(tok("h_right", 3.5, conf=0.5))  # a moderate token needs two tokens
     assert fired == ["Next track"]
-    eng.on_token(tok("thumbs_down", 3.75, conf=0.5))
+    eng.on_token(tok("h_right", 3.75, conf=0.5))
     assert fired == ["Next track", "Previous track"]
 
 
@@ -150,7 +148,9 @@ def test_point_up_is_play_pause_and_does_not_repeat():
     eng, fired, _ = make()
     arm_media(eng)
     eng.on_token(tok("point_up", 1.5))
-    assert fired == ["Play/Pause"] and eng.state == IDLE
+    assert fired == ["Play/Pause"] and eng.state == ARMED
+    hold(eng, "point_up", 1.75, 3.0)  # held: plays/pauses once, not on every token
+    assert fired == ["Play/Pause"]
 
 
 def test_open_palm_in_media_mode_does_nothing():
@@ -182,7 +182,7 @@ def test_pinch_right_raises_and_left_lowers_the_volume():
     pinch(eng, 2.3, PinchPhase.MOVE, 0.54)  # 0.06 back left of the anchor at 0.60: one step down
     assert fired == ["Volume up", "Volume up", "Volume down"]
     pinch(eng, 2.4, PinchPhase.END, 0.54)
-    assert eng.state == IDLE
+    assert eng.state == ARMED  # release: back in the media menu
     assert modes[-1].old == ADJUST
 
 
@@ -239,7 +239,7 @@ def test_pinch_in_window_mode_still_drags():
 def test_quick_command_from_a_short_peace():
     eng, fired, _ = make()
     hold(eng, TWO_UP, 0.0, 0.5)
-    eng.on_token(tok("thumbs_up", 0.75, conf=0.95))
+    eng.on_token(tok("h_left", 0.75, conf=0.95))
     assert fired == ["Next track"]
 
 
@@ -266,12 +266,15 @@ def test_peace_held_after_next_tab_does_not_open_media():
     eng.on_tick(int(1.3 * S))
     eng.on_token(tok(TWO_UP, 1.5))
     assert fired == ["Next tab"] and eng.state == REPEAT
-    hold(eng, TWO_UP, 1.75, 5.0)  # repeat window closes at 3.0, shape still held
-    eng.on_tick(int(5.05 * S))
-    assert eng.state == IDLE
-    eng.on_token(tok("none", 5.25))  # hand changes shape: a peace hold may start again
-    hold(eng, TWO_UP, 5.5, 6.75)
-    eng.on_tick(int(6.8 * S))
+    hold(eng, TWO_UP, 1.75, 3.0)
+    eng.on_tick(int(3.05 * S))  # slide window over: back in the window menu until 8.05
+    assert eng.state == ARMED
+    hold(eng, TWO_UP, 3.25, 8.5)  # shape still held the whole time: never a second Next tab
+    eng.on_tick(int(8.55 * S))
+    assert eng.state == IDLE and fired == ["Next tab"]
+    eng.on_token(tok("none", 8.75))  # hand changes shape: a peace hold may start again
+    hold(eng, TWO_UP, 9.0, 10.25)
+    eng.on_tick(int(10.3 * S))
     assert eng.state == ARMED and eng.namespace == "media"
 
 
