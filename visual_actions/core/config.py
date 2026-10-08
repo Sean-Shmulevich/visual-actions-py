@@ -145,11 +145,11 @@ DEFAULT_BINDINGS: list[dict[str, Any]] = [
     {"gesture": "point_up", "action": {"kind": "key", "name": "Previous tab", "chord": "cmd+shift+[", "repeat": True}},
     {"gesture": "two_up", "action": {"kind": "key", "name": "Next tab", "chord": "cmd+shift+]", "repeat": True}},
     # three fingers up, then a fast sideways swipe: trackpad convention (content follows the hand)
-    {"gesture": "three_up_swipe_left", "action": {"kind": "key", "name": "Desktop right", "chord": "ctrl+right"}},
-    {"gesture": "three_up_swipe_right", "action": {"kind": "key", "name": "Desktop left", "chord": "ctrl+left"}},
+    {"gesture": "three_up_swipe_left", "action": {"kind": "key", "name": "Desktop right", "chord": "ctrl+right", "repeat": True}},
+    {"gesture": "three_up_swipe_right", "action": {"kind": "key", "name": "Desktop left", "chord": "ctrl+left", "repeat": True}},
     # same with the blade (fingers together, edge-on), for a head-to-head on robustness
-    {"gesture": "blade_swipe_left", "action": {"kind": "key", "name": "Desktop right", "chord": "ctrl+right"}},
-    {"gesture": "blade_swipe_right", "action": {"kind": "key", "name": "Desktop left", "chord": "ctrl+left"}},
+    {"gesture": "blade_swipe_left", "action": {"kind": "key", "name": "Desktop right", "chord": "ctrl+right", "repeat": True}},
+    {"gesture": "blade_swipe_right", "action": {"kind": "key", "name": "Desktop left", "chord": "ctrl+left", "repeat": True}},
 ]
 
 

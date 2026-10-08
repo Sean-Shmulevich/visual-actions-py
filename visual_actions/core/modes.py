@@ -234,7 +234,13 @@ class ModeEngine:
         action = self.bindings.lookup(self.namespace or self.default_namespace, f"{ev.shape}_swipe_{ev.direction.value}")
         if action is None:
             return
-        self._go(IDLE, ev.t_ns)
+        if action.arg("repeat") in ("true", "True", "1"):
+            # chain: stay armed for the repeat window so the next flick fires without a new palm
+            self._deadline_ns = ev.t_ns + self.timing.repeat_window_ns
+            self.repeat_count += 1
+            self.bus.publish(ModeChanged(ev.t_ns, ARMED, ARMED, self.namespace, self._deadline_ns))
+        else:
+            self._go(IDLE, ev.t_ns)
         self.fire(action, ev.t_ns)
 
     def on_hand_lost(self, t_ns: int) -> None:

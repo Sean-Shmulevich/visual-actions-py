@@ -98,7 +98,23 @@ def make():
 def test_armed_swipe_fires_bound_direction_and_returns_to_idle():
     eng, fired = make()
     eng.on_swipe(SwipeEvent(int(1.3 * S), SwipeDirection.LEFT, "three_up", 0.3, 2.0))
-    assert fired == ["Desktop right"] and eng.state == IDLE
+    assert fired == ["Desktop right"] and eng.state == IDLE  # not marked repeatable in this test's bindings
+
+
+def test_repeatable_swipes_chain_without_a_new_palm():
+    bus = Bus()
+    fired = []
+    rep = Action(ActionKind.KEY, "Desktop right", (("chord", "ctrl+right"), ("repeat", "true")))
+    eng = ModeEngine(bus, Bindings([Binding("window", "three_up_swipe_left", rep)]), Timing(leader_hold_ns=1 * S, confidence_gain=1.0, repeat_window_ns=int(1.5 * S)), fire=lambda a, t: fired.append(a.name))
+    for i in range(5):
+        eng.on_token(Token(i * 250 * MS, "open_palm", 1.0, Hand.RIGHT, True))
+    eng.on_tick(int(1.05 * S))
+    eng.on_swipe(SwipeEvent(int(1.3 * S), SwipeDirection.LEFT, "three_up", 0.3, 2.0))
+    assert eng.state == ARMED and fired == ["Desktop right"]
+    eng.on_swipe(SwipeEvent(int(2.0 * S), SwipeDirection.LEFT, "three_up", 0.3, 2.0))
+    assert fired == ["Desktop right"] * 2 and eng.state == ARMED
+    eng.on_tick(int(3.6 * S))  # 1.6 s after the last swipe
+    assert eng.state == IDLE
 
 
 def test_swipe_with_unbound_shape_is_ignored():
@@ -119,3 +135,4 @@ def test_default_bindings_have_three_finger_desktop_swipes():
     b = default_config().bindings()
     assert b.lookup("window", "three_up_swipe_left").arg("chord") == "ctrl+right"
     assert b.lookup("window", "three_up_swipe_right").arg("chord") == "ctrl+left"
+    assert b.lookup("window", "three_up_swipe_left").arg("repeat") == "True"
