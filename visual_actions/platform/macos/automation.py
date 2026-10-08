@@ -112,3 +112,9 @@ class MacAutomation:
 
     def screen_size(self) -> tuple[int, int]:
         return self.windows.screen_size()
+
+    def resize_window(self, win: WindowInfo, w: float, h: float) -> bool:
+        return self.windows.resize_window(win, w, h)
+
+    def visible_frame(self) -> Rect:
+        return self.windows.visible_frame()

@@ -33,6 +33,10 @@ class VisualActionsApp(rumps.App):
             from .sound import SoundFeedback
 
             SoundFeedback(self.bus)
+        if cfg.feedback.cursor:
+            from .cursor import CursorOverlay
+
+            CursorOverlay(self.bus)
         if cfg.feedback.popup:
             from .overlay import Overlay
 

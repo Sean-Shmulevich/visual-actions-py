@@ -164,6 +164,36 @@ class MacWindows:
             return False
         return True
 
+    def resize_window(self, win: WindowInfo, w: float, h: float) -> bool:
+        from ApplicationServices import (
+            AXUIElementSetAttributeValue,
+            AXValueCreate,
+            kAXErrorSuccess,
+            kAXSizeAttribute,
+            kAXValueCGSizeType,
+        )
+        from Quartz import CGSize
+
+        el = self._ax_element(win)
+        if el is None:
+            return False
+        err = AXUIElementSetAttributeValue(el, kAXSizeAttribute, AXValueCreate(kAXValueCGSizeType, CGSize(w, h)))
+        if err != kAXErrorSuccess:
+            log.warning("AX resize failed for %s (err %s)", win.app, err)
+            self._ax_cache.pop(win.id, None)
+            return False
+        return True
+
+    def visible_frame(self) -> Rect:
+        """NSScreen.visibleFrame (bottom-left origin) converted to top-left screen points."""
+        from AppKit import NSScreen
+
+        screen = NSScreen.mainScreen()
+        full = screen.frame()
+        vf = screen.visibleFrame()
+        top = full.size.height - (vf.origin.y + vf.size.height)
+        return Rect(int(vf.origin.x), int(top), int(vf.size.width), int(vf.size.height))
+
     def forget(self, win: WindowInfo) -> None:
         self._ax_cache.pop(win.id, None)
         self._ax_cache_pid.pop(win.id, None)

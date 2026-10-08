@@ -2,17 +2,18 @@
 
 from __future__ import annotations
 
-from .automation import DesktopAutomation
+from .automation import DesktopAutomation, Rect
 from .bindings import Bindings
 from .config import Config
 from .dispatcher import Dispatcher
 from .drag import DragController, WindowMover
-from .events import Bus, HandLost, HandSeen, Tick, TokenEmitted
-from .modes import ModeEngine
+from .events import Bus, HandLost, HandSeen, PointerMoved, Tick, TokenEmitted
+from .modes import ARMED, DRAGGING, ModeEngine
 from .normalize import to_user_frame
 from .pinch import PinchDetector
 from .pointer import PointerMap, ReachBox, SmoothedPointer
 from .recognizer import CompositeRecognizer, Recognizer, RuleRecognizer, SklearnRecognizer, Smoother
+from .snap import SnapEngine, SnapRules
 from .types import Action
 
 
@@ -45,7 +46,20 @@ class Pipeline:
             d.smooth_min_cutoff,
             d.smooth_beta,
         )
-        self.drag = DragController(bus, mover, pointer, gain=d.gain) if d.enabled else None
+        snap = None
+        if d.enabled and d.snap_enabled:
+            visible = _visible_frame(mover, sw, sh)
+            snap = SnapEngine(
+                visible,
+                SnapRules(
+                    edge_px=d.snap_edge_px,
+                    corner_px=d.snap_corner_px,
+                    dwell_ns=d.snap_dwell_ms * 1_000_000,
+                    quarters=d.snap_quarters,
+                    maximize=d.snap_maximize,
+                ),
+            )
+        self.drag = DragController(bus, mover, pointer, gain=d.gain, snap=snap) if d.enabled else None
         self.engine = ModeEngine(
             bus=bus,
             bindings=bindings if bindings is not None else config.bindings(),
@@ -68,6 +82,12 @@ class Pipeline:
             pev = self.pinch.update(hf)
             if pev is not None:
                 self.engine.on_pinch(pev)
+            if self.engine.state in (ARMED, DRAGGING):
+                from .pinch import hand_scale, pinch_point
+
+                px, py = pinch_point(hf)
+                cx, cy = self.drag.pointer.pmap.to_screen(px, py, hand_scale(hf))
+                self.bus.publish(PointerMoved(hf.t_ns, cx, cy, self.engine.state == DRAGGING))
         name, conf = self.recognizer.classify(hf)
         tok = self.smoother.push(hf, name, conf)
         if tok is not None:
@@ -81,6 +101,15 @@ class Pipeline:
 
     def _on_tick(self, ev: Tick) -> None:
         self.engine.on_tick(ev.t_ns)
+
+
+def _visible_frame(mover: object, sw: int, sh: int) -> Rect:
+    vf = getattr(mover, "visible_frame", None)
+    if callable(vf):
+        r = vf()
+        if isinstance(r, Rect):
+            return r
+    return Rect(0, 0, sw, sh)
 
 
 def _screen_size(mover: object) -> tuple[int, int]:
@@ -100,6 +129,9 @@ class AutomationMover:
     def screen_size(self) -> tuple[int, int]:
         return self.automation.screen_size()
 
+    def visible_frame(self) -> Rect:
+        return self.automation.visible_frame()
+
     def grab(self, x: float, y: float):
         win = self.automation.window_at(x, y)
         if win is not None:
@@ -108,11 +140,18 @@ class AutomationMover:
             self.automation.move_window(win, float(win.frame.x), float(win.frame.y))
         return win
 
-    def origin(self, handle) -> tuple[float, float]:
-        return (float(handle.frame.x), float(handle.frame.y))
+    def frame(self, handle) -> Rect:
+        return handle.frame
 
     def move(self, handle, x: float, y: float) -> bool:
         return self.automation.move_window(handle, x, y)
+
+    def set_frame(self, handle, rect: Rect) -> bool:
+        ok_size = self.automation.resize_window(handle, float(rect.w), float(rect.h))
+        ok_pos = self.automation.move_window(handle, float(rect.x), float(rect.y))
+        # some apps clamp size until positioned; set size again after the move
+        ok_size = self.automation.resize_window(handle, float(rect.w), float(rect.h)) or ok_size
+        return ok_pos and ok_size
 
     def label(self, handle) -> str:
         return f"{handle.app}: {handle.title}" if handle.title else handle.app

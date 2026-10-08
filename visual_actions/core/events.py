@@ -49,6 +49,28 @@ class HoldProgress:
 
 
 @dataclass(frozen=True)
+class PointerMoved:
+    """Where a pinch would land (ARMED) or where the drag is (DRAGGING), in screen points."""
+
+    t_ns: int
+    x: float
+    y: float
+    dragging: bool
+
+
+@dataclass(frozen=True)
+class SnapPreview:
+    """The frame the window would snap to on release, or None when no zone is active."""
+
+    t_ns: int
+    zone: str | None
+    x: float = 0.0
+    y: float = 0.0
+    w: float = 0.0
+    h: float = 0.0
+
+
+@dataclass(frozen=True)
 class ActionFired:
     t_ns: int
     action: Action

@@ -38,3 +38,9 @@ class LinuxAutomation:
 
     def screen_size(self) -> tuple[int, int]:
         return (1440, 900)
+
+    def resize_window(self, win: WindowInfo, w: float, h: float) -> bool:
+        return False
+
+    def visible_frame(self) -> Rect:
+        return Rect(0, 0, 1440, 900)

@@ -331,6 +331,30 @@ Added 2026-10-08. Moves the window under the hand while the user pinches.
   pipeline on fake time, asserting the mock window's final position), plus the
   driver's `test_windows_mock.py`.
 
+## 11c. Snapping and the pinch cursor (`core/snap.py`, `ui/cursor.py`)
+
+Why our own snapping: BetterTouchTool, Rectangle, macOS tiling and Windows Snap all
+key off real mouse drags of a title bar. We move windows through the Accessibility
+API, which none of them observe, so a drag can never trigger them. The
+alternative, synthesizing real mouse-down/drag/up events on the title bar, would
+hijack the user's cursor and depends on a title bar being under the pointer, so it
+was rejected. `SnapEngine` is pure geometry over the display's *visible frame*
+(screen minus menu bar and dock, `visible_frame()` on the driver) and therefore
+identical on every platform and fully headless.
+
+UX rules: zones arm from the pointer position, not the window edge (halves at
+left/right edges within 28 px, maximize at the top edge, quarters within 110 px of
+a corner; corners win); a zone previews only after a 150 ms dwell so sweeping never
+flashes; leaving needs twice the entering distance (hysteresis); snapping happens on
+release only; hand-lost never snaps; a snapped window dragged again is first
+restored to its pre-snap size, placed so the pointer keeps its relative position,
+so snapping is reversible. The driver gained `resize_window` (AX size attribute,
+~118 ms first call incl. resolve) and `visible_frame`.
+
+Feedback: `ui/cursor.py` shows a ring where a pinch would land while ARMED, a filled
+dot while DRAGGING, and a translucent rectangle over the snap target while a zone
+is previewed. All three are `feedback.cursor` / `drag.snap_*` config switches.
+
 ## 12. Bindings and config (`core/bindings.py`, `core/config.py`)
 
 ```toml

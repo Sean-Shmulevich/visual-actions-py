@@ -39,6 +39,7 @@ class TimingConfig:
 class FeedbackConfig:
     audio: bool = True
     popup: bool = True
+    cursor: bool = True  # small on-screen marker where a pinch lands / where the drag is
 
 
 @dataclass
@@ -76,6 +77,12 @@ class DragConfig:
     gain: float = 1.0  # window pixels per pointer pixel
     smooth_min_cutoff: float = 1.5
     smooth_beta: float = 0.05
+    snap_enabled: bool = True  # our own edge snapping (BetterTouchTool and native tiling only see real mouse drags)
+    snap_edge_px: float = 28.0  # pointer this close to a screen edge arms a half-screen zone
+    snap_corner_px: float = 110.0  # this close to both edges arms a quarter zone
+    snap_dwell_ms: int = 150  # the pointer must stay in a zone this long before it previews
+    snap_quarters: bool = True
+    snap_maximize: bool = True  # top edge = maximize to the visible frame
 
 
 @dataclass

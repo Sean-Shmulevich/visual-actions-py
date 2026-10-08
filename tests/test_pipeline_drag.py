@@ -77,6 +77,27 @@ def test_pinch_over_no_window_is_a_miss(session):
     assert r.automation.windows[0].frame.x == 0
 
 
+def test_drag_to_right_edge_snaps_window_to_right_half(tmp_path):
+    p = tmp_path / "snap.jsonl"
+    # palm at the centre, then a pinch-drag that ends hard against the right edge and stays there
+    write_drag_session(p, palm_seconds=1.5, drag_path=[(0.5, 0.5), (1.1, 0.5), (1.1, 0.5)], drag_seconds=1.2)
+    mock = MockAutomation(windows=[WindowInfo(1, 1, "App", "Win", Rect(400, 100, 500, 500))], screen=(1440, 900))
+    r = replay_full(p, cfg_full_box(), automation=mock)
+    assert r.drags[-1].phase is DragPhase.END and r.drags[-1].snapped == "right"
+    f = r.automation.windows[0].frame
+    assert (f.x, f.y, f.w, f.h) == (720, 25, 720, 875)
+
+
+def test_snapping_can_be_disabled(tmp_path):
+    p = tmp_path / "snap.jsonl"
+    write_drag_session(p, palm_seconds=1.5, drag_path=[(0.5, 0.5), (1.1, 0.5), (1.1, 0.5)], drag_seconds=1.2)
+    cfg = cfg_full_box()
+    cfg.drag.snap_enabled = False
+    mock = MockAutomation(windows=[WindowInfo(1, 1, "App", "Win", Rect(400, 100, 500, 500))], screen=(1440, 900))
+    r = replay_full(p, cfg, automation=mock)
+    assert r.drags[-1].snapped is None and r.automation.windows[0].frame.w == 500
+
+
 def test_unmovable_window_still_ends_cleanly(session):
     mock = big_window_mock()
     mock.movable = False

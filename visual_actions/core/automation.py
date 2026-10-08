@@ -77,3 +77,11 @@ class DesktopAutomation(Protocol):
     def screen_size(self) -> tuple[int, int]:
         """Main display size in points."""
         ...
+
+    def resize_window(self, win: WindowInfo, w: float, h: float) -> bool:
+        """Set the window's size. False if it cannot be resized."""
+        ...
+
+    def visible_frame(self) -> Rect:
+        """Main display area windows may occupy (minus menu bar, dock, taskbar), top-left origin."""
+        ...

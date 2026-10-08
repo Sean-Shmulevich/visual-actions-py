@@ -78,3 +78,18 @@ class MockAutomation:
 
     def screen_size(self) -> tuple[int, int]:
         return self.screen
+
+    def resize_window(self, win: WindowInfo, w: float, h: float) -> bool:
+        self._rec("resize_window", win.id, w, h)
+        if not self.movable:
+            return False
+        for i, win_ in enumerate(self.windows):
+            if win_.id == win.id:
+                f = win_.frame
+                self.windows[i] = WindowInfo(win_.id, win_.pid, win_.app, win_.title, Rect(f.x, f.y, int(w), int(h)), win_.layer)
+                return True
+        return False
+
+    def visible_frame(self) -> Rect:
+        w, h = self.screen
+        return Rect(0, 25, w, h - 25)  # a 25 pt menu bar, like macOS
