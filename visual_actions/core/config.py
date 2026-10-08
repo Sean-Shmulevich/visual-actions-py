@@ -86,8 +86,8 @@ class Config:
 DEFAULT_BINDINGS: list[dict[str, Any]] = [
     {"gesture": "h_left", "action": {"kind": "key", "name": "Cmd+Tab", "chord": "cmd+tab"}},
     {"gesture": "h_right", "action": {"kind": "key", "name": "Cmd+Shift+Tab", "chord": "cmd+shift+tab"}},
-    {"gesture": "point_up", "action": {"kind": "key", "name": "Mission Control", "chord": "ctrl+up"}},
-    {"gesture": "two_up", "action": {"kind": "key", "name": "App Exposé", "chord": "ctrl+down"}},
+    {"gesture": "point_up", "action": {"kind": "key", "name": "Previous tab", "chord": "cmd+shift+["}},
+    {"gesture": "two_up", "action": {"kind": "key", "name": "Next tab", "chord": "cmd+shift+]"}},
 ]
 
 
