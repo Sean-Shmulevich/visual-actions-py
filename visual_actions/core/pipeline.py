@@ -101,7 +101,12 @@ class AutomationMover:
         return self.automation.screen_size()
 
     def grab(self, x: float, y: float):
-        return self.automation.window_at(x, y)
+        win = self.automation.window_at(x, y)
+        if win is not None:
+            # Warm the driver's per-window cache now (the first AX resolve costs ~80 ms on
+            # macOS) so the first real move does not hitch. A move to the current origin.
+            self.automation.move_window(win, float(win.frame.x), float(win.frame.y))
+        return win
 
     def origin(self, handle) -> tuple[float, float]:
         return (float(handle.frame.x), float(handle.frame.y))

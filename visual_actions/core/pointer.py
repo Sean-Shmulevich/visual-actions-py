@@ -83,7 +83,7 @@ class OneEuroFilter:
 
 
 class SmoothedPointer:
-    def __init__(self, pmap: PointerMap, min_cutoff: float = 1.0, beta: float = 0.02) -> None:
+    def __init__(self, pmap: PointerMap, min_cutoff: float = 1.5, beta: float = 0.05) -> None:
         self.pmap = pmap
         self.fx = OneEuroFilter(min_cutoff, beta)
         self.fy = OneEuroFilter(min_cutoff, beta)

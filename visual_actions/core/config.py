@@ -19,7 +19,7 @@ class TimingConfig:
     escape_fist_s: float = 1.0
     escape_lost_s: float = 1.5
     popup_ms: int = 900
-    tick_ms: int = 50
+    tick_ms: int = 10  # queue drain + timers; 10 ms keeps drag moves from bunching into 50 ms bursts
     confidence_gain: float = 1.5  # hold fill rate at confidence 1.0 (1.0 = wall clock)
     leader_min_confidence: float = 0.8  # palm tokens below this neither start nor fill the hold
 
@@ -74,8 +74,8 @@ class DragConfig:
     depth_gain: float = 0.0  # 0 = ignore hand distance; 1 = box scales with hand size
     ref_hand_scale: float = 0.12
     gain: float = 1.0  # window pixels per pointer pixel
-    smooth_min_cutoff: float = 1.0
-    smooth_beta: float = 0.02
+    smooth_min_cutoff: float = 1.5
+    smooth_beta: float = 0.05
 
 
 @dataclass
