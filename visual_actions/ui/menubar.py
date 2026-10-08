@@ -36,7 +36,7 @@ class VisualActionsApp(rumps.App):
         if cfg.feedback.cursor:
             from .cursor import CursorOverlay
 
-            CursorOverlay(self.bus)
+            CursorOverlay(self.bus, while_armed=cfg.feedback.cursor_while_armed)
         if cfg.feedback.popup:
             from .overlay import Overlay
 

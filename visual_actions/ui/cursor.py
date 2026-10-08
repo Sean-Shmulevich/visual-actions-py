@@ -23,7 +23,8 @@ from AppKit import (
     NSWindowStyleMaskNonactivatingPanel,
 )
 
-from ..core.events import Bus, ModeChanged, PointerMoved, SnapPreview
+from ..core.drag import DragEvent, DragPhase
+from ..core.events import Bus, ModeChanged, PointerMoved, SnapPreview, Tick
 from ..core.modes import ARMED, DRAGGING
 
 CURSOR_SIZE = 26
@@ -80,7 +81,13 @@ class PreviewView(NSView):
 
 
 class CursorOverlay:
-    def __init__(self, bus: Bus) -> None:
+    """Shown only for pinch activity: a dot while dragging, and a brief ring where a pinch
+    landed on nothing. With `while_armed` it also tracks the hand as a ring while armed."""
+
+    def __init__(self, bus: Bus, while_armed: bool = False, miss_flash_ms: int = 600) -> None:
+        self.while_armed = while_armed
+        self.miss_flash_ns = miss_flash_ms * 1_000_000
+        self._flash_until_ns = 0
         self.screen_h = NSScreen.mainScreen().frame().size.height
         self.cursor = _panel(0, 0, CURSOR_SIZE, CURSOR_SIZE, level_offset=2)
         self.cursor_view = CursorView.alloc().initWithFrame_(NSMakeRect(0, 0, CURSOR_SIZE, CURSOR_SIZE))
@@ -91,6 +98,8 @@ class CursorOverlay:
         bus.subscribe(PointerMoved, self._on_pointer)
         bus.subscribe(ModeChanged, self._on_mode)
         bus.subscribe(SnapPreview, self._on_snap)
+        bus.subscribe(DragEvent, self._on_drag)
+        bus.subscribe(Tick, self._on_tick)
 
     def _on_mode(self, ev: ModeChanged) -> None:
         self.mode = ev.new
@@ -100,15 +109,29 @@ class CursorOverlay:
             if self.preview.isVisible():
                 self.preview.orderOut_(None)
 
-    def _on_pointer(self, ev: PointerMoved) -> None:
-        if self.mode not in (ARMED, DRAGGING):
-            return
-        self.cursor_view.filled = ev.dragging
-        # AppKit origin is bottom-left
-        self.cursor.setFrameOrigin_((ev.x - CURSOR_SIZE / 2, self.screen_h - ev.y - CURSOR_SIZE / 2))
+    def _on_drag(self, ev: DragEvent) -> None:
+        if ev.phase is DragPhase.MISS:
+            self._flash_until_ns = ev.t_ns + self.miss_flash_ns
+            self._show(ev.x, ev.y, filled=False)
+
+    def _on_tick(self, ev: Tick) -> None:
+        if self._flash_until_ns and ev.t_ns >= self._flash_until_ns and self.mode != DRAGGING:
+            self._flash_until_ns = 0
+            if self.cursor.isVisible():
+                self.cursor.orderOut_(None)
+
+    def _show(self, x: float, y: float, filled: bool) -> None:
+        self.cursor_view.filled = filled
+        self.cursor.setFrameOrigin_((x - CURSOR_SIZE / 2, self.screen_h - y - CURSOR_SIZE / 2))
         if not self.cursor.isVisible():
             self.cursor.orderFrontRegardless()
         self.cursor_view.setNeedsDisplay_(True)
+
+    def _on_pointer(self, ev: PointerMoved) -> None:
+        if self.mode == DRAGGING:
+            self._show(ev.x, ev.y, filled=True)
+        elif self.mode == ARMED and self.while_armed:
+            self._show(ev.x, ev.y, filled=False)
 
     def _on_snap(self, ev: SnapPreview) -> None:
         if ev.zone is None:

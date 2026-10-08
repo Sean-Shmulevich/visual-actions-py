@@ -39,7 +39,8 @@ class TimingConfig:
 class FeedbackConfig:
     audio: bool = True
     popup: bool = True
-    cursor: bool = True  # small on-screen marker where a pinch lands / where the drag is
+    cursor: bool = True  # on-screen marker during pinch activity (dragging, or a brief ring on a missed pinch)
+    cursor_while_armed: bool = False  # also track the hand as a ring the whole time the window is armed
     dashboard: bool = True  # local live status page
     dashboard_port: int = 8765
 
