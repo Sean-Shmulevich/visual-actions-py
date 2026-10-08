@@ -37,6 +37,8 @@ ADJUST  --until the pinch holds still adjust_settle--> nothing (transition pinch
 ADJUST  --pinch MOVE, user's right/left by adjust_step--> fire pinch_right / pinch_left, anchor moves one step
 ADJUST  --pinch END----------------------> ARMED (chaining) / IDLE
 ANY     --fist token (conf >= 0.6)-------> IDLE   (always; a drag is dropped in place)
+HOLDING --hand lost--------------------> IDLE at once (hold_lost_grace 0, STRICT: the palm is continuous),
+                                           else the hold pauses and drops after hold_lost_grace
 ARMED/REPEAT --hand lost (keep_armed_on_lost)--> the window keeps its own deadline; IDLE when it
                                            passes, or when the hand has been gone 2 x escape_lost
                                            with nothing pending (no half-recognized gesture, no slide window)
@@ -86,6 +88,7 @@ class Timing:
     chain_commands: bool = True  # stay ARMED after a command (timeout restarts) so commands chain without the leader
     leader_release_tokens: int = 3  # ARMED: other tokens in a row before the leader shape may fire (a moving peace misreads for 2)
     keep_armed_on_lost: bool = True  # ARMED/REPEAT survive a hand loss until their own deadline (see on_tick); off: escape_lost drops them
+    hold_lost_grace_ns: int = 300_000_000  # HOLDING: a loss shorter than this pauses the hold instead of resetting it; 0 = reset at once (STRICT)
 
 
 def hold_rate(confidence: float, gain: float) -> float:
@@ -397,6 +400,13 @@ class ModeEngine:
         self._refresh_on_return = False
         self._go(ARMED, t_ns)
 
+    def on_hand_seen(self, t_ns: int) -> None:
+        """A frame with a hand, before any token. A paused hold stops its grace clock here, since
+        the next palm token can be a smoothing window (250 ms) away; the other states keep
+        counting until a token or pinch arrives, as before."""
+        if self.state == HOLDING:
+            self._lost_since_ns = None
+
     def on_hand_lost(self, t_ns: int) -> None:
         if self._lost_since_ns is None:
             self._lost_since_ns = t_ns
@@ -408,6 +418,12 @@ class ModeEngine:
             self._fired_block = None  # and so is the shape that fired last
         if self.state in (ARMED, REPEAT) and self.timing.keep_armed_on_lost:
             self._refresh_on_return = True
+        if self.state == HOLDING:
+            if self.timing.hold_lost_grace_ns <= 0:
+                self._go(IDLE, t_ns)  # strict: the palm must be continuous
+                return
+            self._hold_rate = 0.0  # pause: nothing is projected across the gap
+            self._last_palm_ns = None  # and the gap earns no evidence when the palm is back
         if self.state == DRAGGING and self.drag is not None:
             self._returned_at_ns = None
             self.drag.suspend(t_ns)  # window stays; the drag resumes if the hand returns pinching
@@ -437,10 +453,13 @@ class ModeEngine:
 
     def _lost_escape(self, gone_ns: int) -> bool:
         """Hand gone this long: give up the current state?
+        A paused hold lasts only its grace.
         An armed or repeat window keeps its own deadline (on_tick checks it) and is only
         abandoned once the hand is clearly gone with nothing half-done; the command deadline
         bounds the wait either way."""
         t = self.timing
+        if self.state == HOLDING:
+            return gone_ns >= min(t.escape_lost_ns, t.hold_lost_grace_ns)
         if self.state in (ARMED, REPEAT) and t.keep_armed_on_lost:
             pending = self.state == REPEAT or self._fire_mass > 0
             return not pending and gone_ns >= 2 * t.escape_lost_ns

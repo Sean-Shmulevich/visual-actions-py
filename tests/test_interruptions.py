@@ -1,15 +1,15 @@
 """Interruption policy: a hand off-screen or a tracker blip suspends an interaction instead
 of ending it. Armed and repeat windows keep their own deadline; the smoother and pinch
-detector keep their state across a blip."""
+detector keep their state across a blip; a FAST hold pauses, a STRICT hold resets."""
 
 from pathlib import Path
 
 from visual_actions.core.bindings import Bindings
-from visual_actions.core.config import default_config
+from visual_actions.core.config import FAST, STRICT, _base_config, apply_profile, default_config
 from visual_actions.core.dispatcher import Dispatcher
 from visual_actions.core.drag import DragPhase
 from visual_actions.core.events import Bus, HandLost, HandSeen, ModeChanged, TokenEmitted
-from visual_actions.core.modes import ARMED, IDLE, REPEAT, ModeEngine, Timing
+from visual_actions.core.modes import ARMED, HOLDING, IDLE, REPEAT, ModeEngine, Timing
 from visual_actions.core.pipeline import Pipeline
 from visual_actions.core.recorder import Recorder
 from visual_actions.core.types import Action, ActionKind, Binding, Hand, Token
@@ -187,6 +187,54 @@ def test_blip_forgets_a_half_formed_pinch_change():
     assert not pipe.pinch.pinched
 
 
+# -- (c) HOLDING: FAST pauses for a short grace, STRICT resets --------------------------
+
+
+def palms(eng, start, end):
+    t = start
+    while t <= end + 1e-9:
+        eng.on_token(tok("open_palm", t))
+        t += 0.25
+
+
+def test_strict_hold_resets_the_moment_the_hand_is_lost():
+    cfg = apply_profile(_base_config(), STRICT)
+    assert cfg.timing.hold_lost_grace_s == 0.0
+    eng = ModeEngine(Bus(), Bindings(), cfg.timing.to_timing(), fire=lambda a, t: None)
+    palms(eng, 0, 0.5)
+    assert eng.state == HOLDING
+    eng.on_hand_lost(int(0.6 * S))
+    assert eng.state == IDLE
+
+
+def test_fast_hold_pauses_across_a_short_loss_and_the_gap_earns_nothing():
+    assert apply_profile(_base_config(), FAST).timing.hold_lost_grace_s == 0.3
+    eng, _, _ = make(hold_lost_grace_ns=int(0.3 * S))
+    palms(eng, 0, 0.5)
+    assert eng.hold_evidence_ns == 0.5 * S
+    eng.on_hand_lost(int(0.6 * S))
+    eng.on_tick(int(0.8 * S))
+    assert eng.state == HOLDING and eng.projected_hold_ns(int(0.8 * S)) == 0.5 * S  # paused, not projected
+    eng.on_hand_seen(int(0.85 * S))
+    eng.on_tick(int(1.0 * S))  # the grace clock stopped when the hand was seen
+    assert eng.state == HOLDING
+    eng.on_token(tok("open_palm", 1.1))
+    assert eng.hold_evidence_ns == 0.5 * S  # the 0.5 s away did not count as palm
+    palms(eng, 1.35, 1.6)
+    eng.on_tick(int(1.65 * S))
+    assert eng.state == ARMED
+
+
+def test_fast_hold_drops_after_the_grace():
+    eng, _, _ = make(hold_lost_grace_ns=int(0.3 * S))
+    palms(eng, 0, 0.5)
+    eng.on_hand_lost(int(0.6 * S))
+    eng.on_tick(int(0.85 * S))
+    assert eng.state == HOLDING
+    eng.on_tick(int(0.95 * S))
+    assert eng.state == IDLE
+
+
 # -- replay level, one per behaviour --------------------------------------------------------
 
 
@@ -235,3 +283,16 @@ def test_replay_blip_mid_drag_resumes_on_the_first_frame_back(tmp_path: Path):
         resume = next(d for d in r.drags if d.phase is DragPhase.RESUME)
         # a blip keeps the pinch: the drag resumes on the first frame back; a real loss re-forms it over 2 frames
         assert round((resume.t_ns - back) / (S / 30)) == frames_to_resume - 1
+
+
+def test_replay_fast_hold_pauses_over_a_blip_and_still_arms(tmp_path: Path):
+    p = tmp_path / "hold_blip.jsonl"
+    write_session(p, [("open_palm", 0.7), ("lost", 0.1), ("open_palm", 0.5), ("h_left", 0.6), ("lost", 0.5)])
+    cfg = apply_profile(default_config(), FAST)
+    cfg.timing.quick_command = False  # the palm-then-gesture shortcut would hide what the hold does
+    r = replay_full(p, cfg)
+    assert [f.action.name for f in r.fired] == ["Cmd+Tab"]
+    assert [m.new for m in r.modes][:3] == ["holding", "armed", "armed"]  # one hold across the blip, arm, chained fire
+    cfg.timing.hold_lost_grace_s = 0.0  # what STRICT does: the loss resets the hold, 0.5 s of palm is not a leader
+    r = replay_full(p, cfg)
+    assert not r.fired and [m.new for m in r.modes] == ["holding", "idle", "holding", "idle"]

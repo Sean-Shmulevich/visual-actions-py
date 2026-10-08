@@ -104,6 +104,7 @@ class Pipeline:
             else:
                 self.pinch.blip()
             self._lost_at_ns = None
+            self.engine.on_hand_seen(hf.t_ns)
         pev = self.pinch.update(hf)
         if pev is not None:
             self.engine.on_pinch(pev)

@@ -313,6 +313,10 @@ of them shorter than 150 ms). The fist stays the only deliberate cancel.
   hand resumes with its history instead of re-forming the pinch (2 frames) and
   refilling the window (250 ms); a half-formed pinch change from the frames beside
   the loss is forgotten. A drag resumes on the first frame back.
+- HOLDING: STRICT resets the hold the moment the hand is lost (the palm must be
+  continuous). FAST pauses it for `hold_lost_grace_s` (0.3 s): the gap earns no
+  evidence and nothing is projected across it. Before, a lost hand kept the hold's
+  projection running, and 11 holds in the sessions armed across a gap.
 
 **Chained commands (2026-10-08).** With `chain_commands` (default on) a fired
 command, the end of a slide-repeat window, a released drag and a released volume

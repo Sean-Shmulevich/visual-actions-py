@@ -40,7 +40,7 @@ class TimingConfig:
     # how long an interrupted interaction waits for the hand to come back.
     keep_armed_on_lost: bool = True  # an armed or repeat window keeps its own deadline across a hand loss (see modes.py)
     lost_blip_ms: int = 150  # a loss shorter than this keeps the token smoother and pinch detector state (presence already debounces ~100 ms)
-
+    hold_lost_grace_s: float = 0.0  # a loss shorter than this pauses the hold; 0 = reset (STRICT); FAST sets 0.3
 
     def to_timing(self) -> Timing:
         s = 1_000_000_000
@@ -66,6 +66,7 @@ class TimingConfig:
             repeat_slide=self.repeat_slide,
             resume_grace_ns=int(self.resume_grace_s * s),
             keep_armed_on_lost=self.keep_armed_on_lost,
+            hold_lost_grace_ns=int(self.hold_lost_grace_s * s),
         )
 
 
@@ -298,10 +299,12 @@ def apply_profile(cfg: Config, profile: str) -> Config:
     if profile == STRICT:
         t.leader_hold_s, t.confidence_gain, t.leader_min_confidence = 1.5, 1.0, 0.9
         t.hold_break_tokens, t.hold_reset_on_move, t.quick_command = 1, True, False
+        t.hold_lost_grace_s = 0.0  # the palm must be continuous: a lost hand resets the hold
         r.palm_strict = True
     elif profile == FAST:
         t.leader_hold_s, t.confidence_gain, t.leader_min_confidence = 1.1, 1.5, 0.8
         t.hold_break_tokens, t.hold_reset_on_move, t.quick_command = 2, False, True
+        t.hold_lost_grace_s = 0.3  # a brief loss pauses the hold
         r.palm_strict = False
     else:
         raise ValueError(f"unknown profile {profile!r}")
