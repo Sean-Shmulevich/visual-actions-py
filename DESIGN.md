@@ -403,7 +403,13 @@ SKILL.md` documents the format for agents.
 Minimum data for v0.1: 2,000 frames each of `h_left`, `h_right`, `open_palm`,
 `fist`, `none`, from at least two sessions on different days.
 
-Status 2026-10-08: one guided session recorded (~890 frames per gesture, 207 none).
+Gesture set as of 2026-10-08 evening: `open_palm` (leader), `fist` (escape),
+`h_left`, `h_right`, `point_up`, `two_up`, `none`. Seven classes, 9,786 frames, 12
+sessions; the model classifies 99 % of frames in every recording correctly.
+`point_up` and `two_up` have one session each; their bindings (Mission Control,
+App Exposé) are placeholders.
+
+Status 2026-10-08 (earlier): one guided session recorded (~890 frames per gesture, 207 none).
 Logistic regression on the 65-float vector: 0.999 train accuracy, every recording
 classified correctly, and the first live arm-and-fire succeeded with the model
 (`--dry`). No held-out score yet; the trainer prints one automatically once a second
