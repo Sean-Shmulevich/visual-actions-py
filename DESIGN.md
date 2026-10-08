@@ -296,6 +296,16 @@ ANY       --fist held 1.0 s--> IDLE (escape)
 ANY       --HandLost for 1.5 s--> IDLE (escape)
 ```
 
+**Chained commands (2026-10-08).** With `chain_commands` (default on) a fired
+command, the end of a slide-repeat window, a released drag and a released volume
+pinch all return to ARMED in the same namespace with a fresh `command_timeout`,
+instead of IDLE. The gesture that just fired is blocked until `leader_release_tokens`
+other tokens in a row (or a brief hand loss), so a held shape fires once; a different
+bound gesture fires at once, and a confident one also ends a slide-repeat window. A
+fist or the timeout closes the menu. Replaying the recorded sessions (made without
+chaining) adds about 20 fires across 13 sessions where the hand kept moving after a
+command; turn it off per config if that proves noisy.
+
 **Root modes (2026-10-08).** Each namespace names its leader in config; the leader
 that starts the hold picks the namespace. Defaults: `open_palm` → `window`, `two_up`
 (the peace sign) → `media`. Rules that keep the two from colliding, measured by
