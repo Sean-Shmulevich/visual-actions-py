@@ -35,6 +35,8 @@ class DragPhase(Enum):
     MOVE = "move"
     END = "end"
     MISS = "miss"  # pinched over nothing
+    PAUSE = "pause"  # hand lost mid-drag: window stays, waiting for the hand to come back
+    RESUME = "resume"  # hand came back pinching: continue from where the window is
 
 
 @dataclass(frozen=True)
@@ -71,6 +73,8 @@ class DragController:
         # label -> (frame we snapped it to, frame it had before). Lets a re-drag un-snap.
         self._snapped: dict[str, tuple[Rect, Rect]] = {}
         self._preview: str | None = None
+        self.suspended = False
+        self._pos: tuple[float, float] | None = None  # where we last put the window
 
     @property
     def dragging(self) -> bool:
@@ -80,6 +84,11 @@ class DragController:
 
     def on_pinch(self, ev: PinchEvent) -> bool:
         """Returns True if the event was consumed by a drag."""
+        if self.suspended and self.handle is not None:
+            if ev.phase is PinchPhase.END:
+                return False  # a release while suspended is handled by the engine (drop)
+            self._resume(ev)
+            return True
         if ev.phase is PinchPhase.START:
             return self._start(ev)
         if self.handle is None:
@@ -91,9 +100,29 @@ class DragController:
         self._end(ev.t_ns, sx, sy)
         return True
 
+    def suspend(self, t_ns: int) -> None:
+        """Hand lost mid-drag: keep the window where it is, clear any snap preview, wait."""
+        if self.handle is None or self.suspended:
+            return
+        self.suspended = True
+        self._set_preview(t_ns, None)
+        if self.snap is not None:
+            self.snap.reset()
+        self.bus.publish(DragEvent(t_ns, DragPhase.PAUSE, self.mover.label(self.handle), *(self._grab_pointer or (0.0, 0.0))))
+
+    def _resume(self, ev: PinchEvent) -> None:
+        """Re-anchor on the returning hand so the window continues from its current place."""
+        self.suspended = False
+        self.pointer.reset()
+        sx, sy = self.pointer.update(ev.t_ns, ev.x, ev.y, ev.hand_scale)
+        self._grab_pointer = (sx, sy)
+        self._grab_origin = self._pos or self._grab_origin
+        self.bus.publish(DragEvent(ev.t_ns, DragPhase.RESUME, self.mover.label(self.handle), sx, sy))
+
     def cancel(self, t_ns: int) -> None:
-        """Hand lost: drop in place, never snap."""
+        """Drop in place, never snap (hand lost for good, or came back without a pinch)."""
         if self.handle is not None:
+            self.suspended = False
             self._set_preview(t_ns, None)
             if self.snap is not None:
                 self.snap.reset()
@@ -124,6 +153,8 @@ class DragController:
         self._grab_pointer = (sx, sy)
         self._grab_origin = (float(frame.x), float(frame.y))
         self._size = (frame.w, frame.h)
+        self._pos = (float(frame.x), float(frame.y))
+        self.suspended = False
         self.moves = 0
         if self.snap is not None:
             self.snap.reset()
@@ -136,6 +167,7 @@ class DragController:
         ny = self._grab_origin[1] + (sy - self._grab_pointer[1]) * self.gain
         if self.mover.move(self.handle, nx, ny):
             self.moves += 1
+            self._pos = (nx, ny)
         if self.snap is not None:
             zone = self.snap.update(sx, sy, t_ns)
             self._set_preview(t_ns, zone.name if zone else None, zone.target if zone else None)
@@ -157,8 +189,10 @@ class DragController:
     def _finish(self, t_ns: int, sx: float, sy: float, snapped: str | None) -> None:
         label = self.mover.label(self.handle)
         self.handle = None
+        self.suspended = False
         self._grab_pointer = None
         self._grab_origin = None
+        self._pos = None
         self.bus.publish(DragEvent(t_ns, DragPhase.END, label, sx, sy, snapped=snapped))
 
     # -- helpers ------------------------------------------------------------------

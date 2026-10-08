@@ -22,6 +22,7 @@ class TimingConfig:
     tick_ms: int = 10  # queue drain + timers; 10 ms keeps drag moves from bunching into 50 ms bursts
     confidence_gain: float = 1.5  # hold fill rate at confidence 1.0 (1.0 = wall clock)
     leader_min_confidence: float = 0.8  # palm tokens below this neither start nor fill the hold
+    drag_lost_grace_s: float = 2.0  # hand lost mid-drag: window stays and waits this long for the hand
 
     def to_timing(self) -> Timing:
         s = 1_000_000_000
@@ -32,6 +33,7 @@ class TimingConfig:
             escape_lost_ns=int(self.escape_lost_s * s),
             confidence_gain=self.confidence_gain,
             leader_min_confidence=self.leader_min_confidence,
+            drag_lost_grace_ns=int(self.drag_lost_grace_s * s),
         )
 
 

@@ -9,6 +9,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from ..core.drag import DragEvent, DragPhase
 from ..core.events import ActionFired, Bus, ModeChanged
 from ..core.modes import ARMED, DRAGGING, HOLDING, IDLE
 
@@ -20,6 +21,7 @@ MAP = {
     "timeout": SOUNDS / "Bottle.aiff",
     "grab": SOUNDS / "Morse.aiff",
     "drop": SOUNDS / "Pop.aiff",
+    "lost": SOUNDS / "Sosumi.aiff",
 }
 
 
@@ -34,6 +36,7 @@ class SoundFeedback:
     def __init__(self, bus: Bus) -> None:
         bus.subscribe(ModeChanged, self._on_mode)
         bus.subscribe(ActionFired, self._on_action)
+        bus.subscribe(DragEvent, lambda e: play("lost") if e.phase is DragPhase.PAUSE else None)
         self._fired_at: int | None = None
 
     def _on_mode(self, ev: ModeChanged) -> None:

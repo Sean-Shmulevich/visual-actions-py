@@ -11,7 +11,10 @@ ARMED   --different bound token----------> fire_mass restarts with that gesture
 ARMED   --tick >= deadline---------------> IDLE (timeout)
 ARMED   --pinch START over a window------> DRAGGING (window grabbed under the mapped pointer)
 DRAGGING--pinch MOVE---------------------> window follows the hand (DragController)
-DRAGGING--pinch END or hand lost---------> IDLE
+DRAGGING--pinch END--------------------> IDLE
+DRAGGING--hand lost--------------------> DRAGGING, suspended (window stays, red frame)
+suspended--pinch back within grace-----> DRAGGING resumed from the window's current place
+suspended--hand back unpinched / grace-> IDLE (dropped in place)
 ANY     --fist held escape_fist_s--------> IDLE   (only while fist is unbound in the namespace)
 ANY     --hand lost escape_lost_s--------> IDLE
 
@@ -42,6 +45,7 @@ class Timing:
     escape_fist_ns: int = 1_000_000_000
     escape_lost_ns: int = 1_500_000_000
     confidence_gain: float = 1.5  # fill rate at confidence 1.0, relative to wall clock
+    drag_lost_grace_ns: int = 2_000_000_000  # hand lost mid-drag: wait this long for it to come back
     leader_min_confidence: float = 0.8  # palm tokens below this neither start nor fill the hold
 
 
@@ -91,6 +95,10 @@ class ModeEngine:
     def on_token(self, tok: Token) -> None:
         self._lost_since_ns = None
         if self.state == DRAGGING:
+            if self.drag is not None and self.drag.suspended:
+                # the hand is back but not pinching: drop where the window is
+                self.drag.cancel(tok.t_ns)
+                self._go(IDLE, tok.t_ns)
             return  # per-frame pinch events own this state; tokens are ignored
         fist_is_escape = self.bindings.lookup(self.namespace or self.default_namespace, FIST) is None
         if tok.name == FIST and fist_is_escape:
@@ -143,6 +151,10 @@ class ModeEngine:
                 self._go(DRAGGING, ev.t_ns)
             return  # a miss keeps the window armed
         if self.state == DRAGGING:
+            if self.drag.suspended and ev.phase is PinchPhase.END:
+                self.drag.cancel(ev.t_ns)  # came back and let go: drop
+                self._go(IDLE, ev.t_ns)
+                return
             self.drag.on_pinch(ev)
             if ev.phase is PinchPhase.END:
                 self._go(IDLE, ev.t_ns)
@@ -152,10 +164,19 @@ class ModeEngine:
             self._lost_since_ns = t_ns
         self._fist_since_ns = None
         if self.state == DRAGGING and self.drag is not None:
-            self.drag.cancel(t_ns)  # the window stays where it is; the drag just ends
-            self._go(IDLE, t_ns)
+            self.drag.suspend(t_ns)  # window stays; the drag resumes if the hand returns pinching
 
     def on_tick(self, t_ns: int) -> None:
+        if self.state == DRAGGING:
+            if (
+                self.drag is not None
+                and self.drag.suspended
+                and self._lost_since_ns is not None
+                and t_ns - self._lost_since_ns >= self.timing.drag_lost_grace_ns
+            ):
+                self.drag.cancel(t_ns)
+                self._go(IDLE, t_ns)
+            return
         if (
             self._lost_since_ns is not None
             and self.state != IDLE

@@ -115,12 +115,14 @@ def test_pinch_miss_keeps_window_armed():
     assert eng.state == ARMED and drags[-1].phase is DragPhase.MISS
 
 
-def test_hand_lost_while_dragging_releases_in_place():
+def test_hand_lost_while_dragging_suspends_then_releases_in_place():
     eng, wins, modes, drags = make_engine()
     arm(eng)
     eng.on_pinch(pev(PinchPhase.START, int(1.2 * S), 0.5, 0.35))
     eng.on_pinch(pev(PinchPhase.MOVE, int(1.3 * S), 0.6, 0.35))
     eng.on_hand_lost(int(1.4 * S))
+    assert eng.state == DRAGGING and drags[-1].phase is DragPhase.PAUSE  # waiting for the hand
+    eng.on_tick(int(1.4 * S) + eng.timing.drag_lost_grace_ns)
     assert eng.state == IDLE and drags[-1].phase is DragPhase.END
     assert round(wins.windows[0]["x"]) == 400  # stays where it was dropped
 

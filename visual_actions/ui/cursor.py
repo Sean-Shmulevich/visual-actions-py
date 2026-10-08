@@ -80,6 +80,15 @@ class PreviewView(NSView):
         path.stroke()
 
 
+class FrameView(NSView):
+    def drawRect_(self, rect):
+        b = self.bounds()
+        path = NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(NSMakeRect(5, 5, b.size.width - 10, b.size.height - 10), 14, 14)
+        path.setLineWidth_(10)
+        NSColor.colorWithCalibratedRed_green_blue_alpha_(0.95, 0.25, 0.3, 0.85).setStroke()
+        path.stroke()
+
+
 class CursorOverlay:
     """Shown only for pinch activity: a dot while dragging, and a brief ring where a pinch
     landed on nothing. With `while_armed` it also tracks the hand as a ring while armed."""
@@ -92,6 +101,9 @@ class CursorOverlay:
         self.cursor = _panel(0, 0, CURSOR_SIZE, CURSOR_SIZE, level_offset=2)
         self.cursor_view = CursorView.alloc().initWithFrame_(NSMakeRect(0, 0, CURSOR_SIZE, CURSOR_SIZE))
         self.cursor.setContentView_(self.cursor_view)
+        screen = NSScreen.mainScreen().frame()
+        self.frame = _panel(screen.origin.x, screen.origin.y, screen.size.width, screen.size.height, level_offset=3)
+        self.frame.setContentView_(FrameView.alloc().initWithFrame_(NSMakeRect(0, 0, screen.size.width, screen.size.height)))
         self.preview = _panel(0, 0, 10, 10, level_offset=1)
         self.preview.setContentView_(PreviewView.alloc().initWithFrame_(NSMakeRect(0, 0, 10, 10)))
         self.mode = "idle"
@@ -106,10 +118,16 @@ class CursorOverlay:
         if ev.new not in (ARMED, DRAGGING):
             if self.cursor.isVisible():
                 self.cursor.orderOut_(None)
+            if self.frame.isVisible():
+                self.frame.orderOut_(None)
             if self.preview.isVisible():
                 self.preview.orderOut_(None)
 
     def _on_drag(self, ev: DragEvent) -> None:
+        if ev.phase is DragPhase.PAUSE:
+            self.frame.orderFrontRegardless()
+        elif ev.phase in (DragPhase.RESUME, DragPhase.END) and self.frame.isVisible():
+            self.frame.orderOut_(None)
         if ev.phase is DragPhase.MISS:
             self._flash_until_ns = ev.t_ns + self.miss_flash_ns
             self._show(ev.x, ev.y, filled=False)
