@@ -36,6 +36,11 @@ class TimingConfig:
     repeat_window_s: float = 1.5  # after a repeatable action, a sideways slide of the same shape fires it again within this
     resume_grace_s: float = 0.6  # hand back mid-suspension: wait this long for the pinch before dropping
     repeat_slide: float = 0.10  # the slide: wrist must move this fraction of the frame width sideways
+    # Interruptions (hand off-screen or a tracker blip). The fist is still the cancel; these only decide
+    # how long an interrupted interaction waits for the hand to come back.
+    keep_armed_on_lost: bool = True  # an armed or repeat window keeps its own deadline across a hand loss (see modes.py)
+
+
 
     def to_timing(self) -> Timing:
         s = 1_000_000_000
@@ -60,6 +65,7 @@ class TimingConfig:
             repeat_window_ns=int(self.repeat_window_s * s),
             repeat_slide=self.repeat_slide,
             resume_grace_ns=int(self.resume_grace_s * s),
+            keep_armed_on_lost=self.keep_armed_on_lost,
         )
 
 

@@ -293,8 +293,21 @@ HOLDING   --Tick, now-t0 >= leader_hold_s--> ARMED(namespace, deadline)
 ARMED     --token in bindings[namespace]--> FIRE(action) --> IDLE
 ARMED     --Tick, now >= deadline--> TIMEOUT --> IDLE
 ANY       --fist held 1.0 s--> IDLE (escape)
-ANY       --HandLost for 1.5 s--> IDLE (escape)
+HOLDING, ADJUST --HandLost for 1.5 s--> IDLE (escape; ARMED/REPEAT: see Interruptions)
 ```
+
+**Interruptions (2026-10-08 night).** A hand off-screen or a tracker blip suspends
+an interaction instead of ending it, measured by replaying the 14 recorded sessions
+(1,739 hand losses: 383 while ARMED, 49 in REPEAT, 83 in HOLDING, 107 mid-drag; half
+of them shorter than 150 ms). The fist stays the only deliberate cancel.
+
+- ARMED and REPEAT keep their own deadline across a loss (`keep_armed_on_lost`,
+  default on): the window drops when its deadline passes, or when the hand has been
+  gone 2 x `escape_lost_s` with nothing pending (no half-recognized gesture, no open
+  slide window). A returning hand that shows the leader again renews the deadline
+  once, so the habitual re-palm no longer expires the window under the hand (that
+  cost 3 commands in one session). Replayed: the same commands with 34 fewer
+  re-arms (326 -> 292). `escape_lost_s` still drops a hold or a volume adjust.
 
 **Chained commands (2026-10-08).** With `chain_commands` (default on) a fired
 command, the end of a slide-repeat window, a released drag and a released volume

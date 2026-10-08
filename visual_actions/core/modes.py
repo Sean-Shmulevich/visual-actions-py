@@ -37,7 +37,10 @@ ADJUST  --until the pinch holds still adjust_settle--> nothing (transition pinch
 ADJUST  --pinch MOVE, user's right/left by adjust_step--> fire pinch_right / pinch_left, anchor moves one step
 ADJUST  --pinch END----------------------> ARMED (chaining) / IDLE
 ANY     --fist token (conf >= 0.6)-------> IDLE   (always; a drag is dropped in place)
-ANY     --hand lost escape_lost_s--------> IDLE
+ARMED/REPEAT --hand lost (keep_armed_on_lost)--> the window keeps its own deadline; IDLE when it
+                                           passes, or when the hand has been gone 2 x escape_lost
+                                           with nothing pending (no half-recognized gesture, no slide window)
+ADJUST  --hand lost escape_lost_s--------> IDLE  (and ARMED/REPEAT too when keep_armed_on_lost is off)
 
 Confidence therefore accelerates or decelerates both phases: a sure palm arms
 early, a hesitant one stalls; a sure gesture fires on one token, a weak one needs
@@ -82,6 +85,7 @@ class Timing:
     adjust_settle_travel: float = 0.04  # ADJUST: pinch-point drift (frame fraction) that restarts the settle
     chain_commands: bool = True  # stay ARMED after a command (timeout restarts) so commands chain without the leader
     leader_release_tokens: int = 3  # ARMED: other tokens in a row before the leader shape may fire (a moving peace misreads for 2)
+    keep_armed_on_lost: bool = True  # ARMED/REPEAT survive a hand loss until their own deadline (see on_tick); off: escape_lost drops them
 
 
 def hold_rate(confidence: float, gain: float) -> float:
@@ -142,6 +146,7 @@ class ModeEngine:
         self._adjust_since_ns = 0
         self._adjust_settle_xy = (0.5, 0.5)
         self._adjust_settled = False
+        self._refresh_on_return = False  # ARMED kept across a loss: the returning hand's leader shape renews the deadline
 
     def projected_hold_ns(self, t_ns: int) -> float:
         """Evidence extrapolated to t_ns at the last token's rate, so arming and the ring are smooth."""
@@ -207,6 +212,18 @@ class ModeEngine:
             hold = self.timing.leader_hold_ns
             self.bus.publish(HoldProgress(tok.t_ns, min(1.0, self.hold_evidence_ns / hold), rate * 1e9 / hold))
         elif self.state == ARMED:
+            if (
+                self._refresh_on_return
+                and tok.name == self.leader
+                and tok.still
+                and tok.confidence >= self.timing.leader_min_confidence
+            ):
+                # the hand came back and shows the leader again: it wants the menu, so the window
+                # it kept through the loss gets a full timeout instead of expiring under the palm
+                self._refresh_on_return = False
+                self._deadline_ns = tok.t_ns + self.timing.command_timeout_ns
+                self.bus.publish(ModeChanged(tok.t_ns, ARMED, ARMED, self.namespace, self._deadline_ns))
+                return
             if tok.name == self.leader and not self._leader_released:
                 self._release_tokens = 0
                 return  # the leader still held from arming never fires a command
@@ -377,6 +394,7 @@ class ModeEngine:
         self._fire_gesture, self._fire_mass = None, 0.0
         self._leader_released, self._release_tokens = False, 0
         self._fired_block, self._fired_gap = None, 0
+        self._refresh_on_return = False
         self._go(ARMED, t_ns)
 
     def on_hand_lost(self, t_ns: int) -> None:
@@ -388,6 +406,8 @@ class ModeEngine:
         if self.state == ARMED:
             self._leader_released = True  # came back within escape_lost: the leader shape is now a command
             self._fired_block = None  # and so is the shape that fired last
+        if self.state in (ARMED, REPEAT) and self.timing.keep_armed_on_lost:
+            self._refresh_on_return = True
         if self.state == DRAGGING and self.drag is not None:
             self._returned_at_ns = None
             self.drag.suspend(t_ns)  # window stays; the drag resumes if the hand returns pinching
@@ -403,11 +423,7 @@ class ModeEngine:
                 self.drag.cancel(t_ns)
                 self._go(IDLE, t_ns)
             return
-        if (
-            self._lost_since_ns is not None
-            and self.state != IDLE
-            and t_ns - self._lost_since_ns >= self.timing.escape_lost_ns
-        ):
+        if self._lost_since_ns is not None and self.state != IDLE and self._lost_escape(t_ns - self._lost_since_ns):
             self._go(IDLE, t_ns)
             return
         if self.state == HOLDING and self.projected_hold_ns(t_ns) >= self.timing.leader_hold_ns:
@@ -418,6 +434,17 @@ class ModeEngine:
             self._go(IDLE, t_ns)
 
     # -- internals ----------------------------------------------------------
+
+    def _lost_escape(self, gone_ns: int) -> bool:
+        """Hand gone this long: give up the current state?
+        An armed or repeat window keeps its own deadline (on_tick checks it) and is only
+        abandoned once the hand is clearly gone with nothing half-done; the command deadline
+        bounds the wait either way."""
+        t = self.timing
+        if self.state in (ARMED, REPEAT) and t.keep_armed_on_lost:
+            pending = self.state == REPEAT or self._fire_mass > 0
+            return not pending and gone_ns >= 2 * t.escape_lost_ns
+        return gone_ns >= t.escape_lost_ns
 
     def _go(self, new: str, t_ns: int) -> None:
         old = self.state
@@ -440,6 +467,7 @@ class ModeEngine:
             self._hold_rate = 0.0
             self._repeat_action, self._repeat_gesture, self.repeat_count = None, None, 0
             self._returned_at_ns = None
+            self._refresh_on_return = False
         self.bus.publish(
             ModeChanged(t_ns=t_ns, old=old, new=new, namespace=self.namespace, deadline_ns=self._deadline_ns)
         )

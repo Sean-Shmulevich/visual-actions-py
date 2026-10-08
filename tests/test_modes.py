@@ -215,10 +215,12 @@ def test_escape_by_hand_lost():
     eng, fired, _, _ = make()
     arm(eng)
     eng.on_hand_lost(int(2.2 * S))
-    eng.on_tick(int(3.6 * S))
-    assert eng.state == ARMED  # 1.4 s, not yet
     eng.on_tick(int(3.8 * S))
-    assert eng.state == IDLE and not fired
+    assert eng.state == ARMED  # 1.6 s: an armed window outlives escape_lost (keep_armed_on_lost)
+    eng.on_tick(int(5.1 * S))
+    assert eng.state == ARMED  # 2.9 s
+    eng.on_tick(int(5.3 * S))
+    assert eng.state == IDLE and not fired  # clearly gone (2 x escape_lost), nothing pending
 
 
 def test_brief_hand_loss_does_not_escape():
