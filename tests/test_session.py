@@ -27,8 +27,8 @@ def test_session_writes_video_log_and_landmarks(tmp_path: Path):
     bus.publish(DragEvent(s.t0 + 8, DragPhase.END, "App: W", 10, 20, snapped="left"))
     summary = s.close()
 
-    assert summary["frames"] == 10 and summary["landmark_frames"] == 1
-    assert (s.dir / "video.mp4").stat().st_size > 0
+    assert summary["frames"] == 10 and summary["landmark_frames"] == 1 and summary["segments"] == 1
+    assert (s.dir / "video-001.mp4").stat().st_size > 0
     log = (s.dir / "events.log").read_text().splitlines()
     kinds = [line.split()[2] for line in log[:-1]]
     assert kinds == ["session", "mode", "token", "action", "action", "drag"]
@@ -36,6 +36,28 @@ def test_session_writes_video_log_and_landmarks(tmp_path: Path):
     assert json.loads(log[-1])["summary"]["frames"] == 10
     recs = list(read_session(s.dir / "landmarks.jsonl"))
     assert isinstance(recs[0], HandFrame) and isinstance(recs[1], int)
+
+
+def test_video_is_segmented_and_each_segment_is_readable(tmp_path: Path):
+    import cv2
+
+    s = SessionRecorder(tmp_path, fps=30, segment_s=0.5)
+    frame = np.zeros((48, 64, 3), dtype=np.uint8)
+    for i in range(40):  # 1.33 s at 30 fps -> 3 segments
+        s.write_frame(frame, s.t0 + i * 33_000_000)
+    s.close()
+    segs = sorted(s.dir.glob("video-*.mp4"))
+    assert len(segs) == 3
+    for seg in segs:
+        c = cv2.VideoCapture(str(seg))
+        assert c.isOpened() and c.read()[0]
+
+
+def test_close_is_idempotent(tmp_path: Path):
+    s = SessionRecorder(tmp_path)
+    a = s.close()
+    b = s.close()
+    assert a["frames"] == b["frames"] == 0
 
 
 def test_session_without_bus_only_records_frames(tmp_path: Path):

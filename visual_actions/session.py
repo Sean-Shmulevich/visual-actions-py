@@ -1,7 +1,9 @@
 """Session recording: camera video, a timestamped event log, and the raw landmarks.
 
 One folder per run under the data dir:
-    sessions/<YYYYmmdd-HHMMSS>/video.mp4      camera frames, elapsed time + mode burned in
+    sessions/<YYYYmmdd-HHMMSS>/video-001.mp4  camera frames, elapsed time + mode burned in,
+                                              in segments of `segment_s` so a crash or a hard
+                                              quit loses at most the last segment
     sessions/<YYYYmmdd-HHMMSS>/events.log     "elapsed  wall-clock  kind  details", one line each
     sessions/<YYYYmmdd-HHMMSS>/landmarks.jsonl raw HandFrames (same format as datasets/)
 
@@ -11,6 +13,7 @@ is guarded by a lock. Video is 640x480 mp4v, roughly 1-2 MB per minute.
 
 from __future__ import annotations
 
+import atexit
 import json
 import threading
 import time
@@ -25,7 +28,10 @@ from .core.types import HandFrame
 
 
 class SessionRecorder:
-    def __init__(self, root: Path, bus: Bus | None = None, fps: float = 30.0, log_tokens: bool = True) -> None:
+    def __init__(self, root: Path, bus: Bus | None = None, fps: float = 30.0, log_tokens: bool = True, segment_s: float = 120.0) -> None:
+        self.segment_s = segment_s
+        self._segment = 0
+        self._segment_started_ns = 0
         self.dir = root / f"{datetime.now():%Y%m%d-%H%M%S}"  # noqa: DTZ005 - local time for a folder name
         self.dir.mkdir(parents=True, exist_ok=True)
         self.fps = fps
@@ -40,6 +46,8 @@ class SessionRecorder:
         self._log = (self.dir / "events.log").open("w", encoding="utf-8", buffering=1)
         self._landmarks = Recorder(self.dir / "landmarks.jsonl")
         self.log("session", f"started {self.started_wall:%Y-%m-%d %H:%M:%S}")
+        self._closed = False
+        atexit.register(self.close)
         if bus is not None:
             bus.subscribe(ModeChanged, self._on_mode)
             bus.subscribe(ActionFired, self._on_action)
@@ -54,11 +62,16 @@ class SessionRecorder:
         import cv2
 
         with self._lock:
+            if self._video is not None and (t_ns - self._segment_started_ns) / 1e9 >= self.segment_s:
+                self._video.release()  # close the segment so its index is written; the next frame opens a new one
+                self._video = None
             if self._video is None:
                 h, w = frame.shape[:2]
                 self._size = (w, h)
+                self._segment += 1
+                self._segment_started_ns = t_ns
                 fourcc = cv2.VideoWriter_fourcc(*"mp4v")  # type: ignore[attr-defined]
-                self._video = cv2.VideoWriter(str(self.dir / "video.mp4"), fourcc, self.fps, (w, h))
+                self._video = cv2.VideoWriter(str(self.dir / f"video-{self._segment:03d}.mp4"), fourcc, self.fps, (w, h))
             img = cv2.flip(frame, 1)  # selfie view, same as the preview
             stamp = f"{self.elapsed_s(t_ns):8.2f}s  {self.mode}"
             cv2.putText(img, stamp, (10, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 0, 0), 4)
@@ -106,7 +119,10 @@ class SessionRecorder:
 
     def close(self) -> dict[str, Any]:
         with self._lock:
-            summary = {"dir": str(self.dir), "frames": self.frames, "seconds": round(self.elapsed_s(), 1), "landmark_frames": self._landmarks.count}
+            if self._closed:
+                return {"dir": str(self.dir), "frames": self.frames, "seconds": round(self.elapsed_s(), 1), "landmark_frames": self._landmarks.count, "segments": self._segment}
+            self._closed = True
+            summary = {"dir": str(self.dir), "frames": self.frames, "seconds": round(self.elapsed_s(), 1), "landmark_frames": self._landmarks.count, "segments": self._segment}
             self._log.write(json.dumps({"summary": summary}) + "\n")
             self._log.close()
             self._landmarks.close()

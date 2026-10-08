@@ -73,6 +73,7 @@ class VisualActionsApp(rumps.App):
         self.bus.subscribe(ModeChanged, lambda e: self._set_title({"idle": "✋", "holding": "⏳", "armed": "🟢", "dragging": "🤏", "repeat": "🔁"}.get(e.new, "✋")))
         self.bus.subscribe(ActionFired, lambda e: self._set_status(f"Last: {e.action.name} {'ok' if e.ok else e.message}"))
         self.timer = rumps.Timer(self.tick, cfg.timing.tick_ms / 1000)
+        self._install_terminate_hook()
 
     # -- lifecycle ----------------------------------------------------------
 
@@ -167,6 +168,24 @@ class VisualActionsApp(rumps.App):
     def quit(self, _item) -> None:
         self.stop()
         rumps.quit_application()
+
+    def _install_terminate_hook(self) -> None:
+        """Cmd-Q, Dock quit, log out and shutdown all go through NSApplicationWillTerminate;
+        rumps does not forward it, so observe the notification ourselves and close the session."""
+        import objc
+        from AppKit import NSApplicationWillTerminateNotification
+        from Foundation import NSNotificationCenter, NSObject
+
+        app = self
+
+        class _Observer(NSObject):
+            def onTerminate_(self, _note) -> None:
+                app.stop()
+
+        self._terminate_observer = _Observer.alloc().init()
+        NSNotificationCenter.defaultCenter().addObserver_selector_name_object_(
+            self._terminate_observer, objc.selector(self._terminate_observer.onTerminate_, signature=b"v@:@"), NSApplicationWillTerminateNotification, None
+        )
 
     # -- helpers --------------------------------------------------------------
 

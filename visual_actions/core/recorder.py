@@ -33,7 +33,7 @@ def from_json(d: dict) -> HandFrame:
 class Recorder:
     def __init__(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
-        self._f: IO[str] = path.open("w", encoding="utf-8")
+        self._f: IO[str] = path.open("w", encoding="utf-8", buffering=1)  # line-buffered: survives a hard quit
         self.count = 0
 
     def write(self, hf: HandFrame) -> None:
