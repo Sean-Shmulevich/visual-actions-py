@@ -14,19 +14,22 @@ from .types import Action, ActionKind, Binding
 
 @dataclass
 class TimingConfig:
-    leader_hold_s: float = 1.1
+    leader_hold_s: float = 1.5  # a clear, still palm for this long, straight
     command_timeout_s: float = 5.0
     escape_fist_s: float = 1.0
     escape_lost_s: float = 1.5
     popup_ms: int = 900
     tick_ms: int = 10  # queue drain + timers; 10 ms keeps drag moves from bunching into 50 ms bursts
-    confidence_gain: float = 1.5  # hold fill rate at confidence 1.0 (1.0 = wall clock)
-    leader_min_confidence: float = 0.8  # palm tokens below this neither start nor fill the hold
+    confidence_gain: float = 1.0  # hold fill rate at confidence 1.0; 1.0 = wall clock, so confidence can only slow the hold
+    leader_min_confidence: float = 0.9  # palm tokens below this neither start nor fill the hold
+    chain_commands: bool = True  # a menu stays open after each command (timeout restarts); fist or timeout closes it
     leader_release_tokens: int = 3  # after arming, the leader shape fires (if bound) only after this many other tokens in a row
     adjust_step: float = 0.05  # media pinch: sideways travel (fraction of frame width) per volume step
     adjust_settle_s: float = 0.25  # media pinch: hold the pinch still this long before movement changes the volume
     adjust_settle_travel: float = 0.04  # media pinch: drift during the settle that restarts it
-    hold_break_tokens: int = 2  # consecutive non-palm tokens (250 ms each) before a hold is abandoned
+    hold_break_tokens: int = 1  # any non-palm token abandons the hold (strict: the palm must be continuous)
+    hold_reset_on_move: bool = True  # a moving palm resets the hold instead of pausing it
+    quick_command: bool = False  # off: it bypasses the hold and was the main false-fire channel
     quick_command_min_hold_s: float = 0.3  # clear palm this long + a confident bound gesture = arm and fire in one motion
     quick_command_min_confidence: float = 0.85
     drag_lost_grace_s: float = 2.5  # hand lost mid-drag: window stays and waits this long for the hand
@@ -44,11 +47,14 @@ class TimingConfig:
             confidence_gain=self.confidence_gain,
             leader_min_confidence=self.leader_min_confidence,
             leader_release_tokens=self.leader_release_tokens,
+            chain_commands=self.chain_commands,
             adjust_step=self.adjust_step,
             adjust_settle_ns=int(self.adjust_settle_s * s),
             adjust_settle_travel=self.adjust_settle_travel,
             drag_lost_grace_ns=int(self.drag_lost_grace_s * s),
             hold_break_tokens=self.hold_break_tokens,
+            hold_reset_on_move=self.hold_reset_on_move,
+            quick_command=self.quick_command,
             quick_command_min_hold_ns=int(self.quick_command_min_hold_s * s),
             quick_command_min_confidence=self.quick_command_min_confidence,
             repeat_window_ns=int(self.repeat_window_s * s),
@@ -80,6 +86,7 @@ class CameraConfig:
 class RecognizerConfig:
     model: str | None = None  # path to a joblib; None = rules only
     rule_min: float = 0.9  # a rule needs this confidence to override the model
+    palm_strict: bool = True  # the model's open_palm must also pass the geometric palm rule (spread fingers, thumb out)
     fire_evidence: float = 0.9  # summed token confidence needed to fire: one sure token, or several weak ones
     min_token_confidence: float = 0.3  # tokens below this never count toward firing
     smoothing_ms: int = 250
@@ -118,6 +125,7 @@ class DragConfig:
     depth_gain: float = 0.0
     ref_hand_scale: float = 0.12  # measured typical seating distance; 0.12 ~ 55 cm from a MacBook camera
     gain: float = 1.0  # window pixels per pointer pixel
+    focus_on_grab: bool = True  # a grabbed window becomes active and the pane under the pinch gets keyboard focus
     smooth_min_cutoff: float = 1.5
     smooth_beta: float = 0.05
     snap_enabled: bool = True  # our own edge snapping (BetterTouchTool and native tiling only see real mouse drags)
@@ -125,7 +133,6 @@ class DragConfig:
     snap_corner_px: float = 110.0  # this close to both edges arms a quarter zone
     snap_dwell_ms: int = 150  # the pointer must stay in a zone this long before it previews
     snap_quarters: bool = True
-    focus_on_grab: bool = True  # a grabbed window becomes active and the pane under the pinch gets keyboard focus
     snap_maximize: bool = True  # top edge = maximize to the visible frame
 
 
@@ -181,7 +188,7 @@ DEFAULT_MEDIA_BINDINGS: list[dict[str, Any]] = [
 ]
 
 
-def default_config() -> Config:
+def _base_config() -> Config:
     return Config(
         namespaces={
             "window": NamespaceConfig(leader="open_palm", bindings=list(DEFAULT_BINDINGS)),
@@ -210,6 +217,8 @@ def load_config(path: Path | None) -> Config:
         return cfg
     with path.open("rb") as f:
         data = tomllib.load(f)
+    # [leader] profile = "strict" | "fast" sets the leader preset first; explicit [timing] keys still override
+    apply_profile(cfg, data.get("leader", {}).get("profile", STRICT))
     _merge(cfg.timing, data.get("timing", {}))
     _merge(cfg.feedback, data.get("feedback", {}))
     _merge(cfg.camera, data.get("camera", {}))
@@ -249,3 +258,29 @@ def save_config(cfg: Config, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("wb") as f:
         tomli_w.dump(data, f)
+
+
+STRICT, FAST = "strict", "fast"
+
+
+def apply_profile(cfg: Config, profile: str) -> Config:
+    """Leader profiles. STRICT (the app default, 2026-10-08): a clear, still palm for
+    1.5 s straight; confidence can only slow it; any flicker or movement resets; no
+    quick command; the model's palm must also pass the geometric palm rule.
+    FAST: the earlier, looser behaviour (1.1 s, confidence speeds up, pauses, quick command)."""
+    t, r = cfg.timing, cfg.recognizer
+    if profile == STRICT:
+        t.leader_hold_s, t.confidence_gain, t.leader_min_confidence = 1.5, 1.0, 0.9
+        t.hold_break_tokens, t.hold_reset_on_move, t.quick_command = 1, True, False
+        r.palm_strict = True
+    elif profile == FAST:
+        t.leader_hold_s, t.confidence_gain, t.leader_min_confidence = 1.1, 1.5, 0.8
+        t.hold_break_tokens, t.hold_reset_on_move, t.quick_command = 2, False, True
+        r.palm_strict = False
+    else:
+        raise ValueError(f"unknown profile {profile!r}")
+    return cfg
+
+
+def default_config(profile: str = STRICT) -> Config:
+    return apply_profile(_base_config(), profile)

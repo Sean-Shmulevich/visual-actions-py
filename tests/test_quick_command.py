@@ -36,8 +36,8 @@ def test_short_palm_then_confident_bound_gesture_fires_at_once():
     palm(eng, 0.25)
     palm(eng, 0.5)  # 0.5 s of evidence, well short of the 1.1 s hold
     eng.on_token(Token(int(0.75 * S), "h_left", 0.95, Hand.RIGHT, True))
-    assert fired == ["Cmd+Tab"] and eng.state == IDLE
-    assert [m.new for m in modes] == [HOLDING, ARMED, IDLE]
+    assert fired == ["Cmd+Tab"] and eng.state == ARMED
+    assert [m.new for m in modes] == [HOLDING, ARMED, ARMED]
 
 
 def test_too_short_a_palm_does_not_quick_fire():

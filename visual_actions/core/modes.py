@@ -15,22 +15,27 @@ HOLDING --tick, evidence >= leader_hold--> ARMED(namespace, deadline)
 HOLDING --another root mode's leader------> HOLDING restarts in that namespace (never a quick command)
 ARMED   --leader token-------------------> ignored until leader_release_tokens other tokens in a row,
                                            or a brief hand loss (drop the hand, show it again)
-ARMED   --bound token--------------------> fire_mass += confidence; >= fire_evidence -> fire -> IDLE
+ARMED   --bound token--------------------> fire_mass += confidence; >= fire_evidence -> fire -> ARMED
+                                           (chain_commands: fresh command_timeout, so commands chain
+                                           without the leader; the gesture that fired must be released
+                                           first: leader_release_tokens other tokens or a brief hand loss.
+                                           chain_commands off: -> IDLE)
 ARMED   --different bound token----------> fire_mass restarts with that gesture
 ARMED   --tick >= deadline---------------> IDLE (timeout)
 ARMED   --pinch START over a window------> DRAGGING (drag namespace only, "window") (window grabbed under the mapped pointer)
 DRAGGING--pinch MOVE---------------------> window follows the hand (DragController)
-DRAGGING--pinch END--------------------> IDLE
+DRAGGING--pinch END--------------------> ARMED (chaining) / IDLE
 DRAGGING--hand lost--------------------> DRAGGING, suspended (window stays, red frame)
 suspended--pinch back within grace-----> DRAGGING resumed from the window's current place
 suspended--hand back unpinched / grace-> IDLE (dropped in place)
 ARMED   --repeatable action fires------> REPEAT(deadline = now + repeat_window)
 REPEAT  --same shape, wrist slid sideways >= repeat_slide--> fire again, deadline refreshed
-REPEAT  --deadline-----------------------> IDLE
+REPEAT  --deadline-----------------------> ARMED (chaining) / IDLE
+REPEAT  --confident other bound gesture--> ARMED, and that gesture is handled at once
 ARMED   --pinch START, namespace binds pinch_right/pinch_left--> ADJUST(anchor = pinch x)
 ADJUST  --until the pinch holds still adjust_settle--> nothing (transition pinches move, never settle)
 ADJUST  --pinch MOVE, user's right/left by adjust_step--> fire pinch_right / pinch_left, anchor moves one step
-ADJUST  --pinch END----------------------> IDLE
+ADJUST  --pinch END----------------------> ARMED (chaining) / IDLE
 ANY     --fist token (conf >= 0.6)-------> IDLE   (always; a drag is dropped in place)
 ANY     --hand lost escape_lost_s--------> IDLE
 
@@ -64,7 +69,9 @@ class Timing:
     confidence_gain: float = 1.5  # fill rate at confidence 1.0, relative to wall clock
     drag_lost_grace_ns: int = 2_500_000_000  # hand lost mid-drag: wait this long for it to come back
     repeat_window_ns: int = 1_500_000_000  # slide-to-repeat window after a repeatable action
-    hold_break_tokens: int = 2  # consecutive non-palm tokens tolerated during a hold (classifier flicker)
+    hold_break_tokens: int = 2  # consecutive non-palm tokens tolerated during a hold (1 = none); the STRICT profile sets 1
+    hold_reset_on_move: bool = False  # moving palm resets evidence (else pauses); STRICT sets True
+    quick_command: bool = True  # STRICT sets False
     quick_command_min_hold_ns: int = 300_000_000  # a clear palm this long, then a confident bound gesture, arms + fires at once
     quick_command_min_confidence: float = 0.85
     resume_grace_ns: int = 600_000_000  # hand back mid-suspension: wait this long for the pinch before dropping
@@ -73,6 +80,7 @@ class Timing:
     adjust_step: float = 0.05  # ADJUST: sideways pinch travel (fraction of frame width) per pinch_right / pinch_left
     adjust_settle_ns: int = 250_000_000  # ADJUST: the pinch must hold still this long before travel counts (shape changes pinch briefly)
     adjust_settle_travel: float = 0.04  # ADJUST: pinch-point drift (frame fraction) that restarts the settle
+    chain_commands: bool = True  # stay ARMED after a command (timeout restarts) so commands chain without the leader
     leader_release_tokens: int = 3  # ARMED: other tokens in a row before the leader shape may fire (a moving peace misreads for 2)
 
 
@@ -129,6 +137,8 @@ class ModeEngine:
         self._last_token: str | None = None  # last shape seen while the hand is present
         self._idle_block: str | None = None  # shape held when the engine went idle; cannot lead until it changes
         self._adjust_anchor_x: float = 0.5
+        self._fired_block: str | None = None  # chaining: the gesture that just fired cannot fire again until released
+        self._fired_gap = 0
         self._adjust_since_ns = 0
         self._adjust_settle_xy = (0.5, 0.5)
         self._adjust_settled = False
@@ -188,6 +198,8 @@ class ModeEngine:
             self._hold_misses = 0
             dt = 0 if self._last_palm_ns is None else tok.t_ns - self._last_palm_ns
             self._last_palm_ns = tok.t_ns
+            if not tok.still and self.timing.hold_reset_on_move:
+                self.hold_evidence_ns = 0.0  # strict: the palm must be still for the whole hold
             sure = tok.still and tok.confidence >= self.timing.leader_min_confidence
             rate = hold_rate(tok.confidence, self.timing.confidence_gain) if sure else 0.0
             self.hold_evidence_ns = max(0.0, self.hold_evidence_ns + dt * rate)
@@ -202,6 +214,14 @@ class ModeEngine:
                 # a misread while the hand moves is not a release: leader_release_tokens in a row are
                 self._release_tokens += 1
                 self._leader_released = self._release_tokens >= self.timing.leader_release_tokens
+            if self._fired_block is not None:
+                if tok.name == self._fired_block:
+                    if self._fired_gap < self.timing.leader_release_tokens:
+                        self._fired_gap = 0
+                        return  # still the shape that just fired: holding it is not a second command
+                    self._fired_block = None
+                else:
+                    self._fired_gap += 1
             action = self.bindings.lookup(self.namespace or self.default_namespace, tok.name)
             if action is None or tok.confidence < self.min_token_confidence:
                 return
@@ -217,9 +237,19 @@ class ModeEngine:
                     self._deadline_ns = tok.t_ns + self.timing.repeat_window_ns
                     self._go(REPEAT, tok.t_ns)
                 else:
-                    self._go(IDLE, tok.t_ns)
+                    self._after_command(tok.t_ns, tok.name)
                 self.fire(action, tok.t_ns)
         elif self.state == REPEAT:
+            if (
+                self.timing.chain_commands
+                and tok.name != self._repeat_gesture
+                and tok.confidence >= self.timing.quick_command_min_confidence
+                and self.bindings.lookup(self.namespace or self.default_namespace, tok.name) is not None
+            ):
+                # chaining: a confident different command ends the slide window and is handled at once
+                self._after_command(tok.t_ns, self._repeat_gesture)
+                self.on_token(tok)
+                return
             if tok.name != self._repeat_gesture or tok.confidence < self.min_token_confidence:
                 return  # only the same shape counts; anything else is ignored until the window closes
             if abs(tok.x - self._repeat_anchor_x) >= self.timing.repeat_slide and self._repeat_action is not None:
@@ -243,7 +273,7 @@ class ModeEngine:
         if self.state in (HOLDING, ARMED) and not pinch_ok:
             return
         self._lost_since_ns = None
-        if self.state == HOLDING and ev.phase is PinchPhase.START and self.hold_evidence_ns >= self.timing.quick_command_min_hold_ns:
+        if self.state == HOLDING and ev.phase is PinchPhase.START and self.timing.quick_command and self.hold_evidence_ns >= self.timing.quick_command_min_hold_ns:
             # leader then pinch in one motion: arm and grab (or adjust)
             self._arm(ev.t_ns)
         if self.state == ARMED and ev.phase is PinchPhase.START:
@@ -264,7 +294,7 @@ class ModeEngine:
                 self._returned_at_ns = None  # pinch is back: resume
             self.drag.on_pinch(ev)
             if ev.phase is PinchPhase.END:
-                self._go(IDLE, ev.t_ns)
+                self._after_command(ev.t_ns, None)  # dropped: grab another window, or anything else
 
     def _adjust_bound(self) -> bool:
         ns = self.namespace or self.default_namespace
@@ -274,7 +304,7 @@ class ModeEngine:
         """Pinched hand travels sideways in the user frame (+x is the user's right): one
         pinch_right / pinch_left per adjust_step of frame width. Releasing ends it."""
         if ev.phase is PinchPhase.END:
-            self._go(IDLE, ev.t_ns)
+            self._after_command(ev.t_ns, None)
             return
         if not self._adjust_settled:
             # "pinch, hold, then move": a pinch crossed during a shape change is moving, never settles
@@ -307,7 +337,8 @@ class ModeEngine:
         followed by a confident BOUND gesture arms immediately and feeds the token to ARMED."""
         ns = self.namespace or self.default_namespace
         if (
-            self.hold_evidence_ns < self.timing.quick_command_min_hold_ns
+            not self.timing.quick_command
+            or self.hold_evidence_ns < self.timing.quick_command_min_hold_ns
             or tok.confidence < self.timing.quick_command_min_confidence
             or self.bindings.lookup(ns, tok.name) is None
         ):
@@ -328,11 +359,24 @@ class ModeEngine:
         self._go(HOLDING, tok.t_ns)
         return True
 
+    def _after_command(self, t_ns: int, gesture: str | None) -> None:
+        """A command finished. Chaining keeps the menu open with a fresh timeout; the
+        gesture that fired must be released before it can fire again."""
+        if not self.timing.chain_commands:
+            self._go(IDLE, t_ns)
+            return
+        self._deadline_ns = t_ns + self.timing.command_timeout_ns
+        self._fire_gesture, self._fire_mass = None, 0.0
+        self._repeat_action, self._repeat_gesture, self.repeat_count = None, None, 0
+        self._fired_block, self._fired_gap = gesture, 0
+        self._go(ARMED, t_ns)
+
     def _arm(self, t_ns: int) -> None:
         self.namespace = self.namespace or self.default_namespace
         self._deadline_ns = t_ns + self.timing.command_timeout_ns
         self._fire_gesture, self._fire_mass = None, 0.0
         self._leader_released, self._release_tokens = False, 0
+        self._fired_block, self._fired_gap = None, 0
         self._go(ARMED, t_ns)
 
     def on_hand_lost(self, t_ns: int) -> None:
@@ -343,6 +387,7 @@ class ModeEngine:
         self._idle_block = None  # the hand left: whatever it shows next is a fresh start
         if self.state == ARMED:
             self._leader_released = True  # came back within escape_lost: the leader shape is now a command
+            self._fired_block = None  # and so is the shape that fired last
         if self.state == DRAGGING and self.drag is not None:
             self._returned_at_ns = None
             self.drag.suspend(t_ns)  # window stays; the drag resumes if the hand returns pinching
@@ -367,7 +412,9 @@ class ModeEngine:
             return
         if self.state == HOLDING and self.projected_hold_ns(t_ns) >= self.timing.leader_hold_ns:
             self._arm(t_ns)
-        elif self.state in (ARMED, REPEAT) and self._deadline_ns is not None and t_ns >= self._deadline_ns:
+        elif self.state == REPEAT and self._deadline_ns is not None and t_ns >= self._deadline_ns:
+            self._after_command(t_ns, self._repeat_gesture)  # slide window over: back to the menu
+        elif self.state == ARMED and self._deadline_ns is not None and t_ns >= self._deadline_ns:
             self._go(IDLE, t_ns)
 
     # -- internals ----------------------------------------------------------
@@ -382,6 +429,7 @@ class ModeEngine:
                 self._idle_block = self._last_token
             self.leader = None
             self._leader_released = False
+            self._fired_block, self._fired_gap = None, 0
             self.namespace = None
             self.hold_evidence_ns = 0.0
             self._last_palm_ns = None

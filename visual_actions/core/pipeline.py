@@ -40,6 +40,7 @@ class Pipeline:
         self.config = config
         self.dispatcher = dispatcher
         self.recognizer = recognizer or build_recognizer(config)
+        self._palm_rule = RuleRecognizer()
         self.smoother = Smoother(
             window_ns=config.recognizer.smoothing_ms * 1_000_000,
             still_px=config.recognizer.still_px,
@@ -103,6 +104,8 @@ class Pipeline:
             cx, cy = self.drag.pointer.pmap.to_screen(px, py, hand_scale(hf))
             self.bus.publish(PointerMoved(hf.t_ns, cx, cy, self.engine.state == DRAGGING))
         name, conf = self.recognizer.classify(hf)
+        if name == OPEN_PALM and self.config.recognizer.palm_strict and self._palm_rule.classify(hf)[0] != OPEN_PALM:
+            name, conf = NONE, 0.5  # the model says palm but the geometry does not: not a leader
         if name == OPEN_PALM and palm_vetoed(hf, ev.face_overlap, self.config):
             name, conf = NONE, 0.5  # a hand on a face is not a leader
             if hf.t_ns - self._last_veto_ns >= 500_000_000:

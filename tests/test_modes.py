@@ -53,12 +53,28 @@ def test_hold_rate_curve():
     assert hold_rate(1.0, 1.5) == 1.5
 
 
-def test_happy_path_fires_once_and_returns_to_idle():
+def test_happy_path_fires_once_and_stays_in_the_menu():
     eng, fired, changes, _ = make()
     arm(eng)
     eng.on_token(tok("h_left", int(2.5 * S)))
     assert fired == [(CMD_TAB, int(2.5 * S))]
+    assert eng.state == ARMED  # chained commands: the menu stays open with a fresh timeout
+    assert [c.new for c in changes] == [HOLDING, ARMED, ARMED]
+    eng.on_token(tok("h_left", int(2.75 * S)))  # still holding the shape: not a second command
+    assert len(fired) == 1
+    eng.on_tick(int(7.45 * S))
+    assert eng.state == ARMED
+    eng.on_tick(int(7.5 * S))  # 5 s after the last command
     assert eng.state == IDLE
+
+
+def test_without_chaining_a_command_closes_the_menu():
+    from dataclasses import replace
+
+    eng, fired, changes, _ = make(replace(TIMING, chain_commands=False))
+    arm(eng)
+    eng.on_token(tok("h_left", int(2.5 * S)))
+    assert fired and eng.state == IDLE
     assert [c.new for c in changes] == [HOLDING, ARMED, IDLE]
 
 
@@ -210,4 +226,4 @@ def test_brief_hand_loss_does_not_escape():
     arm(eng)
     eng.on_hand_lost(int(2.2 * S))
     eng.on_token(tok("h_left", int(3.0 * S)))  # hand came back inside 1.5 s
-    assert fired and eng.state == IDLE
+    assert fired and eng.state == ARMED
