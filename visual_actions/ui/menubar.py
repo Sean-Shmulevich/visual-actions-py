@@ -16,6 +16,7 @@ from ..paths import config_path
 from ..platform import factory
 from ..session import SessionRecorder
 from .capture import CaptureThread
+from .preview import DebugPreview
 
 
 class VisualActionsApp(rumps.App):
@@ -28,6 +29,7 @@ class VisualActionsApp(rumps.App):
         self.bus = Bus()
         self.q: queue.Queue = queue.Queue(maxsize=64)
         self.capture: CaptureThread | None = None
+        self.preview: DebugPreview | None = None
         self.session: SessionRecorder | None = None
 
         Pipeline(self.bus, cfg, Dispatcher(self.bus, self.services.automation))
@@ -103,11 +105,7 @@ class VisualActionsApp(rumps.App):
             from ..paths import sessions_dir
 
             self.session = SessionRecorder(sessions_dir(), self.bus)
-        self.preview = None
-        if self.cfg.feedback.preview:
-            from .preview import DebugPreview
-
-            self.preview = DebugPreview()
+        self.preview = DebugPreview() if self.cfg.feedback.preview else None
         self.capture = CaptureThread(self.services.camera, self.q, use_gate=self.use_gate, sink=self.session, face_veto=self.cfg.leader.face_veto, preview=self.preview)
         self.capture.start()
         self.toggle_item.title = "Stop"
@@ -116,7 +114,7 @@ class VisualActionsApp(rumps.App):
         if self.capture:
             self.capture.stop()
             self.capture = None
-        if getattr(self, "preview", None) is not None:
+        if self.preview is not None:
             self.preview.close()
             self.preview = None
         if self.session is not None:
@@ -134,7 +132,7 @@ class VisualActionsApp(rumps.App):
                 break
             self.bus.publish(ev)
         self.bus.publish(Tick(time.monotonic_ns()))
-        if getattr(self, "preview", None) is not None:
+        if self.preview is not None:
             self.preview.label = self.title or ""
             self.preview.show()
         if self.capture and self.capture.error:
