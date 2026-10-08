@@ -1,15 +1,21 @@
-"""Interruption policy: a hand off-screen keeps an armed or repeat window alive until its
-own deadline instead of ending it at escape_lost; the fist stays the cancel."""
+"""Interruption policy: a hand off-screen or a tracker blip suspends an interaction instead
+of ending it. Armed and repeat windows keep their own deadline; the smoother and pinch
+detector keep their state across a blip."""
 
 from pathlib import Path
 
 from visual_actions.core.bindings import Bindings
 from visual_actions.core.config import default_config
-from visual_actions.core.events import Bus, ModeChanged
+from visual_actions.core.dispatcher import Dispatcher
+from visual_actions.core.drag import DragPhase
+from visual_actions.core.events import Bus, HandLost, HandSeen, ModeChanged, TokenEmitted
 from visual_actions.core.modes import ARMED, IDLE, REPEAT, ModeEngine, Timing
+from visual_actions.core.pipeline import Pipeline
+from visual_actions.core.recorder import Recorder
 from visual_actions.core.types import Action, ActionKind, Binding, Hand, Token
+from visual_actions.platform.mock.automation import MockAutomation
 from visual_actions.tools.replay import replay_full
-from visual_actions.tools.synth import write_session
+from visual_actions.tools.synth import drag_frames, hand_frame, write_session
 
 S = 1_000_000_000
 CMD_TAB = Action(ActionKind.KEY, "Cmd+Tab", (("chord", "cmd+tab"),))
@@ -127,6 +133,60 @@ def test_repeat_then_clearly_gone_drops():
     assert eng.state == IDLE and len(fired) == 1
 
 
+# -- (b) smoother and pinch detector keep state across a blip ---------------------------
+
+
+def pipeline(cfg=None):
+    cfg = cfg or default_config()
+    bus = Bus()
+    pipe = Pipeline(bus, cfg, Dispatcher(bus, MockAutomation()))
+    tokens = []
+    bus.subscribe(TokenEmitted, tokens.append)
+    return bus, pipe, tokens
+
+
+def feed(bus, name, t0, seconds, fps=30):
+    t = t0
+    for _ in range(int(seconds * fps)):
+        bus.publish(HandSeen(hand_frame(name, int(t * S), mirror_to_raw=True)))
+        t += 1 / fps
+    return t
+
+
+def test_blip_keeps_the_pinch_and_the_token_window():
+    bus, pipe, tokens = pipeline()
+    t = feed(bus, "pinch", 0.0, 0.5)
+    assert pipe.pinch.pinched and len(pipe.smoother._buf) > 1
+    bus.publish(HandLost(int(t * S)))
+    assert pipe.pinch.pinched  # nothing is thrown away until the hand stays away
+    n = len(tokens)
+    feed(bus, "pinch", t + 0.1, 0.1)  # back after 100 ms
+    assert pipe.pinch.pinched and len(pipe.smoother._buf) > 3  # history kept: no 2-frame re-form, no refill
+    assert tokens[n].token.t_ns - int((t + 0.1) * S) < 0.1 * S  # a token within the first frames back
+
+
+def test_a_longer_loss_resets_both():
+    bus, pipe, _ = pipeline()
+    t = feed(bus, "pinch", 0.0, 0.5)
+    bus.publish(HandLost(int(t * S)))
+    bus.publish(HandSeen(hand_frame("pinch", int((t + 0.4) * S))))
+    assert not pipe.pinch.pinched and len(pipe.smoother._buf) == 1
+    feed(bus, "pinch", t + 0.4 + 1 / 30, 0.1)
+    assert pipe.pinch.pinched  # re-formed over the debounce
+
+
+def test_blip_forgets_a_half_formed_pinch_change():
+    bus, pipe, _ = pipeline()
+    t = feed(bus, "pinch", 0.0, 0.5)
+    bus.publish(HandSeen(hand_frame("open_palm", int(t * S))))  # one open frame: release pending
+    assert pipe.pinch.pinched and pipe.pinch._pending == 1
+    bus.publish(HandLost(int((t + 1 / 30) * S)))
+    bus.publish(HandSeen(hand_frame("open_palm", int((t + 0.1) * S))))
+    assert pipe.pinch.pinched  # the frame beside the loss does not count: a release needs 2 fresh frames
+    bus.publish(HandSeen(hand_frame("open_palm", int((t + 0.1 + 1 / 30) * S))))
+    assert not pipe.pinch.pinched
+
+
 # -- replay level, one per behaviour --------------------------------------------------------
 
 
@@ -139,3 +199,39 @@ def test_replay_armed_window_survives_two_seconds_without_a_hand(tmp_path: Path)
     cfg = default_config()
     cfg.timing.keep_armed_on_lost = False
     assert [f.action.name for f in replay_full(p, cfg).fired] == ["Cmd+Tab"]  # the old escape_lost drop
+
+
+def test_replay_blip_mid_drag_resumes_on_the_first_frame_back(tmp_path: Path):
+    def session(path: Path, gap: float):
+        rec = Recorder(path)
+        t = 0.0
+        for _ in range(45):
+            rec.write(hand_frame("open_palm", int(t * S), center=(0.5, 0.5)))
+            t += 1 / 30
+        for hf in drag_frames(t, [(0.5, 0.5), (0.6, 0.5)], 0.5):
+            rec.write(hf)
+        t += 0.5
+        rec.write_lost(int(t * S))
+        t += gap
+        back = t
+        for hf in drag_frames(t, [(0.6, 0.5), (0.7, 0.5)], 0.5):
+            rec.write(hf)
+        t += 0.5
+        for _ in range(12):
+            rec.write(hand_frame("open_palm", int(t * S), center=(0.7, 0.5)))
+            t += 1 / 30
+        rec.write_lost(int(t * S))
+        rec.close()
+        return int(back * S)
+
+    cfg = default_config()
+    cfg.drag.box_x0, cfg.drag.box_x1, cfg.drag.box_y0, cfg.drag.box_y1 = 0, 1, 0, 1
+    for gap, frames_to_resume in ((0.1, 1), (0.4, 2)):
+        p = tmp_path / f"blip_{gap}.jsonl"
+        back = session(p, gap)
+        r = replay_full(p, cfg, automation=MockAutomation(screen=(1440, 900)))
+        phases = [d.phase for d in r.drags if d.phase is not DragPhase.MOVE]
+        assert phases == [DragPhase.START, DragPhase.PAUSE, DragPhase.RESUME, DragPhase.END]
+        resume = next(d for d in r.drags if d.phase is DragPhase.RESUME)
+        # a blip keeps the pinch: the drag resumes on the first frame back; a real loss re-forms it over 2 frames
+        assert round((resume.t_ns - back) / (S / 30)) == frames_to_resume - 1

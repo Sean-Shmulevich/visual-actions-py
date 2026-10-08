@@ -69,6 +69,12 @@ class PinchDetector:
         self._last = None
         return was
 
+    def blip(self) -> None:
+        """The hand was gone for a few frames: keep the pinch state, forget any half-formed change.
+        The frames beside a loss are the hand at the edge or a phantom; a transition needs
+        `debounce_frames` fresh frames after the return."""
+        self._pending = 0
+
     def update(self, hf: HandFrame) -> PinchEvent | None:
         d = pinch_distance(hf)
         x, y = pinch_point(hf)

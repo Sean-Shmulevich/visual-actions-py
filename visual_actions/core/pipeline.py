@@ -84,6 +84,7 @@ class Pipeline:
             leaders=config.leaders(),
         )
         self._last_veto_ns = -(10**18)
+        self._lost_at_ns: int | None = None  # a HandLost not yet applied to the smoother and pinch detector
         bus.subscribe(HandSeen, self._on_hand_seen)
         bus.subscribe(HandLost, self._on_hand_lost)
         bus.subscribe(Tick, self._on_tick)
@@ -93,6 +94,16 @@ class Pipeline:
 
     def _on_hand_seen(self, ev: HandSeen) -> None:
         hf = to_user_frame(ev.hand_frame, self.config.camera.mirror)
+        if self._lost_at_ns is not None:
+            # A blip (presence debounce already hides ~100 ms, this covers the next 150 ms) keeps
+            # the token window and the pinch state, so the returning hand resumes with its history
+            # instead of re-forming the pinch (2 frames) and refilling the window (250 ms).
+            if hf.t_ns - self._lost_at_ns >= self.config.timing.lost_blip_ms * 1_000_000:
+                self.smoother.reset()
+                self.pinch.reset()
+            else:
+                self.pinch.blip()
+            self._lost_at_ns = None
         pev = self.pinch.update(hf)
         if pev is not None:
             self.engine.on_pinch(pev)
@@ -124,8 +135,7 @@ class Pipeline:
             self.engine.on_token(tok)
 
     def _on_hand_lost(self, ev: HandLost) -> None:
-        self.smoother.reset()
-        self.pinch.reset()
+        self._lost_at_ns = ev.t_ns  # smoother and pinch reset only if the hand stays away past lost_blip_ms
         self.engine.on_hand_lost(ev.t_ns)
 
     def _on_tick(self, ev: Tick) -> None:

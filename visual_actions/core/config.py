@@ -39,7 +39,7 @@ class TimingConfig:
     # Interruptions (hand off-screen or a tracker blip). The fist is still the cancel; these only decide
     # how long an interrupted interaction waits for the hand to come back.
     keep_armed_on_lost: bool = True  # an armed or repeat window keeps its own deadline across a hand loss (see modes.py)
-
+    lost_blip_ms: int = 150  # a loss shorter than this keeps the token smoother and pinch detector state (presence already debounces ~100 ms)
 
 
     def to_timing(self) -> Timing:

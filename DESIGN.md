@@ -308,6 +308,11 @@ of them shorter than 150 ms). The fist stays the only deliberate cancel.
   once, so the habitual re-palm no longer expires the window under the hand (that
   cost 3 commands in one session). Replayed: the same commands with 34 fewer
   re-arms (326 -> 292). `escape_lost_s` still drops a hold or a volume adjust.
+- A loss shorter than `lost_blip_ms` (150 ms, on top of the presence filter's ~100 ms
+  debounce) keeps the token smoother's window and the pinch state, so the returning
+  hand resumes with its history instead of re-forming the pinch (2 frames) and
+  refilling the window (250 ms); a half-formed pinch change from the frames beside
+  the loss is forgotten. A drag resumes on the first frame back.
 
 **Chained commands (2026-10-08).** With `chain_commands` (default on) a fired
 command, the end of a slide-repeat window, a released drag and a released volume
