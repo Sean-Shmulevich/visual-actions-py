@@ -39,8 +39,7 @@ class Pipeline:
         self.pinch = PinchDetector(d.pinch_on, d.pinch_off, d.debounce_frames)
         if mover is None:
             mover = AutomationMover(dispatcher.automation)
-        size = getattr(mover, "screen_size", None)
-        sw, sh = size() if callable(size) else (1440, 900)
+        sw, sh = _screen_size(mover)
         pointer = SmoothedPointer(
             PointerMap(sw, sh, ReachBox(d.box_x0, d.box_x1, d.box_y0, d.box_y1), d.depth_gain, d.ref_hand_scale),
             d.smooth_min_cutoff,
@@ -82,6 +81,14 @@ class Pipeline:
 
     def _on_tick(self, ev: Tick) -> None:
         self.engine.on_tick(ev.t_ns)
+
+
+def _screen_size(mover: object) -> tuple[int, int]:
+    size = getattr(mover, "screen_size", None)
+    if callable(size):
+        w, h = size()
+        return int(w), int(h)
+    return (1440, 900)
 
 
 class AutomationMover:
