@@ -202,6 +202,12 @@ the Tasks `HandLandmarker` in VIDEO mode, `num_hands=1` in v0.1, min confidences
 0.6. It produces landmarks in the raw camera frame; `normalize.py` is the only place
 the user-frame flip happens, so the tracker stays convention-free.
 
+Spike result (2026-10-07, M-series MacBook, 640x480, AVFoundation via OpenCV):
+capture 29.9 fps, tracker p50 13.7 ms, p95 15.2 ms, right hand reported as
+`Right` on the raw (unmirrored) frame. MediaPipe's handedness already assumes a
+selfie-style input, so on the raw frame the label matches the user's real hand;
+do not re-flip handedness in the normalizer.
+
 ## 8. Normalization (`core/normalize.py`)
 
 `to_user_frame(hf: HandFrame, mirror: bool) -> HandFrame` flips x when `mirror` is
@@ -319,7 +325,15 @@ class DesktopAutomation(Protocol):
 ```
 
 `MacAutomation.press` posts `CGEvent` key down/up with modifier flags; chord parsing
-is shared across platforms in `core/chords.py`. `run_native` chooses the runner by
+is shared across platforms in `core/chords.py`.
+
+Spike result (2026-10-07): the app switcher ignores a Tab event that merely carries
+the Command flag. The working sequence on `kCGHIDEventTap` is: Command key down
+(keycode 0x37, flag set) → Tab down (flag set) → Tab up (flag set) → ~150 ms →
+Command key up. So `press` always posts real modifier key events around the main
+key. Also: `NSWorkspace.frontmostApplication()` is stale in a process with no run
+loop; verify the front app through System Events or a live run loop, never from a
+plain script. `run_native` chooses the runner by
 extension: `.applescript` → `osascript`, `.py` → the app's interpreter, `.sh` → `sh`.
 Windows stub and Linux mock log and return success, so the full pipeline runs in CI.
 

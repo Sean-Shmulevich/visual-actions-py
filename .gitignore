@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+models/*.joblib
+models/*.task
+datasets/
+dist/
+build/
+.DS_Store
