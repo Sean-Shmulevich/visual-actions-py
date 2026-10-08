@@ -442,6 +442,48 @@ Feedback: `ui/cursor.py` shows a ring where a pinch would land while ARMED, a fi
 dot while DRAGGING, and a translucent rectangle over the snap target while a zone
 is previewed. All three are `feedback.cursor` / `drag.snap_*` config switches.
 
+## 11d. Presence, off-screen hands and fast exits (`core/presence.py`)
+
+`PresenceFilter` sits in the capture thread between the tracker and the bus. A frame
+is usable when the tracker found a hand and the edge rule accepts it: MediaPipe keeps
+reporting a hand clamped to the border after it leaves, so a wrist or pinch point
+beyond the left, right or top edge (margin 0.02), a pinch point below the bottom, or
+six or more landmarks outside rejects the frame. The bottom edge exempts the wrist: a
+hand reaching down has its wrist below the frame while the pinch is still in view. A
+hand is lost after `lost_frames` (3) consecutive unusable frames, because half of the
+losses in the 16:55 session were one-frame tracker blips that paused drags for nothing.
+
+**Fast exits (2026-10-08 evening).** The debounce costs every exit ~130 ms at 23 fps,
+and a hand flicked out (35 exits at >= 2 frame widths/s in 189 min of sessions, up to
+4.8) produced phantom border frames first, so a pinch-drag jumped or released late.
+The filter now declares `fast-exit` at once, skipping the debounce, when:
+
+- a usable frame has the wrist (left/right/top) or pinch point (left/right/top;
+  bottom only with `fast_exit_bottom`) within `fast_exit_reach` (0.1) of an edge,
+  moving at >= `fast_exit_speed` (2.0 fw/s) so that its position
+  `fast_exit_lookahead_frames` (2) ahead is outside;
+- an unusable frame follows a usable one at that speed and the point is outside now
+  or extrapolated outside (the hand did not glitch, it left); with no hand at all the
+  last two usable frames extrapolate instead;
+- a usable frame touches a border with its landmark spread under `fast_exit_collapse`
+  (0.5) of the recent spread, or confidence under `fast_exit_min_confidence` (0.5):
+  the phantom a tracker reports while the hand is gone.
+
+After a fast exit the hand only counts as back once a frame is clear of the border
+zone, so the lingering phantom never resumes a drag. The reach limit matters: without
+it, fast swings across the middle of the frame (volume pinches, waves) predicted an
+exit 400 times in the recordings. All of it is `[presence]` config; `fast_exit = false`
+restores the plain debounce.
+
+Measured by re-filtering every recording through the filter inside `replay_full`
+(`presence=`): 100 fast-exit declarations in 189 min, 69 of them 1..3 frames ahead of
+a loss the old filter also logged, 3 exits the old log never had, the rest hands
+hovering at a side edge (0.16 extra losses per minute; 9.25 → 9.37 lost/min overall).
+Drag starts (171), pauses (95) and fires (753 → 759) are unchanged within noise, so
+ordinary drags gained no false losses. `tests/test_presence.py` flings a synthetic
+pinched hand out of each edge at 2, 4 and 8 fw/s and requires the loss within two
+frames of the last in-frame position (the debounce alone takes three).
+
 ## 12. Bindings and config (`core/bindings.py`, `core/config.py`)
 
 ```toml
