@@ -5,6 +5,7 @@ IDLE    --open_palm & still--------------> HOLDING (evidence 0)
 HOLDING --open_palm token----------------> evidence += dt * rate(confidence)
                                            rate = clamp((c - 0.5) / 0.5, -1, 1) * gain
 HOLDING --token != open_palm-------------> hold pauses; IDLE after hold_break_tokens in a row
+HOLDING --evidence >= quick_min & confident BOUND gesture (or pinch)--> ARMED at once, token handled there
 HOLDING --tick, evidence >= leader_hold--> ARMED(namespace, deadline)
 ARMED   --bound token--------------------> fire_mass += confidence; >= fire_evidence -> fire -> IDLE
 ARMED   --different bound token----------> fire_mass restarts with that gesture
@@ -53,6 +54,8 @@ class Timing:
     drag_lost_grace_ns: int = 2_500_000_000  # hand lost mid-drag: wait this long for it to come back
     repeat_window_ns: int = 1_500_000_000  # slide-to-repeat window after a repeatable action
     hold_break_tokens: int = 2  # consecutive non-palm tokens tolerated during a hold (classifier flicker)
+    quick_command_min_hold_ns: int = 300_000_000  # a clear palm this long, then a confident bound gesture, arms + fires at once
+    quick_command_min_confidence: float = 0.85
     repeat_slide: float = 0.10  # sideways wrist travel (fraction of frame width) that counts as a slide
     leader_min_confidence: float = 0.8  # palm tokens below this neither start nor fill the hold
 
@@ -130,6 +133,8 @@ class ModeEngine:
                 self._hold_misses = 0
                 self._go(HOLDING, tok.t_ns)
         elif self.state == HOLDING:
+            if tok.name != OPEN_PALM and self._quick_command(tok):
+                return
             if tok.name != OPEN_PALM:
                 # classifier flicker: a brief non-palm token pauses the hold instead of killing it
                 self._hold_misses += 1
@@ -186,6 +191,11 @@ class ModeEngine:
         if self.drag is None:
             return
         self._lost_since_ns = None
+        if self.state == HOLDING and ev.phase is PinchPhase.START and self.hold_evidence_ns >= self.timing.quick_command_min_hold_ns:
+            # palm then pinch in one motion: arm and grab
+            self.namespace = self.namespace or self.default_namespace
+            self._deadline_ns = ev.t_ns + self.timing.command_timeout_ns
+            self._go(ARMED, ev.t_ns)
         if self.state == ARMED and ev.phase is PinchPhase.START:
             if self.drag.on_pinch(ev):
                 self._go(DRAGGING, ev.t_ns)
@@ -198,6 +208,24 @@ class ModeEngine:
             self.drag.on_pinch(ev)
             if ev.phase is PinchPhase.END:
                 self._go(IDLE, ev.t_ns)
+
+    def _quick_command(self, tok: Token) -> bool:
+        """Palm-then-gesture in one motion: the user's natural rhythm is ~0.4 s of palm before
+        the command (2026-10-08 sessions). A clear palm held past quick_command_min_hold
+        followed by a confident BOUND gesture arms immediately and feeds the token to ARMED."""
+        ns = self.namespace or self.default_namespace
+        if (
+            self.hold_evidence_ns < self.timing.quick_command_min_hold_ns
+            or tok.confidence < self.timing.quick_command_min_confidence
+            or self.bindings.lookup(ns, tok.name) is None
+        ):
+            return False
+        self.namespace = ns
+        self._deadline_ns = tok.t_ns + self.timing.command_timeout_ns
+        self._fire_gesture, self._fire_mass = None, 0.0
+        self._go(ARMED, tok.t_ns)
+        self.on_token(tok)
+        return True
 
     def on_swipe(self, ev: SwipeEvent) -> None:
         """Per-frame motion input: while ARMED, a swipe with a bound shape fires `<shape>_swipe_<dir>`."""

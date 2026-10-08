@@ -23,6 +23,8 @@ class TimingConfig:
     confidence_gain: float = 1.5  # hold fill rate at confidence 1.0 (1.0 = wall clock)
     leader_min_confidence: float = 0.8  # palm tokens below this neither start nor fill the hold
     hold_break_tokens: int = 2  # consecutive non-palm tokens (250 ms each) before a hold is abandoned
+    quick_command_min_hold_s: float = 0.3  # clear palm this long + a confident bound gesture = arm and fire in one motion
+    quick_command_min_confidence: float = 0.85
     drag_lost_grace_s: float = 2.5  # hand lost mid-drag: window stays and waits this long for the hand
     repeat_window_s: float = 1.5  # after a repeatable action, a sideways slide of the same shape fires it again within this
     repeat_slide: float = 0.10  # the slide: wrist must move this fraction of the frame width sideways
@@ -38,6 +40,8 @@ class TimingConfig:
             leader_min_confidence=self.leader_min_confidence,
             drag_lost_grace_ns=int(self.drag_lost_grace_s * s),
             hold_break_tokens=self.hold_break_tokens,
+            quick_command_min_hold_ns=int(self.quick_command_min_hold_s * s),
+            quick_command_min_confidence=self.quick_command_min_confidence,
             repeat_window_ns=int(self.repeat_window_s * s),
             repeat_slide=self.repeat_slide,
         )
@@ -84,8 +88,13 @@ class DragConfig:
     box_x1: float = 0.85
     box_y0: float = 0.15
     box_y1: float = 0.85
-    depth_gain: float = 0.0  # 0 = ignore hand distance; 1 = box scales with hand size
-    ref_hand_scale: float = 0.12
+    # Distance. By default (depth_gain = 0) the pointer maps the camera frame directly, so a
+    # hand farther from the camera moves the pointer less per centimetre: speed follows
+    # distance, which users liked. depth_gain = 1 normalizes that using ref_hand_scale, the
+    # hand size (wrist to middle knuckle, as a fraction of frame width) at the distance the
+    # user normally sits. `calibrate` measures ref_hand_scale from the user's recordings.
+    depth_gain: float = 0.0
+    ref_hand_scale: float = 0.12  # measured typical seating distance; 0.12 ~ 55 cm from a MacBook camera
     gain: float = 1.0  # window pixels per pointer pixel
     smooth_min_cutoff: float = 1.5
     smooth_beta: float = 0.05

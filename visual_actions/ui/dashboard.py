@@ -126,7 +126,7 @@ class Dashboard:
             "log": log,
             "bindings": bindings,
             "timing": asdict(self.cfg.timing),
-            "drag": {k: v for k, v in asdict(self.cfg.drag).items() if k in ("enabled", "pinch_on", "pinch_off", "snap_enabled", "gain")},
+            "drag": {k: v for k, v in asdict(self.cfg.drag).items() if k in ("enabled", "pinch_on", "pinch_off", "snap_enabled", "gain", "depth_gain", "ref_hand_scale")},
             "stats": self.stats(),
             "uptime_s": round(time.time() - self.started_at),
         }

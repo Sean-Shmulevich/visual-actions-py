@@ -300,6 +300,36 @@ when it is not:
   0.5 tokens fire on the second, tokens under `min_token_confidence` (0.3) never
   count. Switching gesture restarts the mass.
 
+## 11a. Leader fault tolerance, measured (`tools/evaluate.py`)
+
+`evaluate leader` replays every recording through the real pipeline and counts
+palm starts, arms, breaks, fires and drags per class; starts on non-palm classes
+are false starts. `evaluate swipe` sweeps synthetic strokes over landmark noise
+and rotation for each swipe shape.
+
+Findings on the 2026-10-08 recordings (10,828 session frames + 9,786 dataset frames):
+- False starts on non-palm data: 2 in ~5 min (0.45/min), 1 false arm, 0 false fires.
+- Every hold break happened at < 40 % of the hold. 7 of 15 were the user moving from
+  the palm straight into the command (pinch, point_up, two_up) after ~0.4 s. The
+  natural rhythm is shorter than the 1.1 s hold.
+- Fix 1, flicker tolerance: a single non-palm token pauses the hold instead of
+  killing it (`hold_break_tokens = 2`). Breaks 17 → 15.
+- Fix 2, quick command: a clear palm held ≥ 0.3 s followed by a confident (≥ 0.85)
+  BOUND gesture, or a pinch, arms immediately and the gesture is handled as a
+  command. Sessions: arms 49 → 54, breaks 17 → 10, fires 21 → 25, drags 3 → 6; no
+  change in false arms/fires on "none" data. Unbound or unsure gestures still only
+  pause the hold, so the safety of the leader is intact.
+- Swipe shapes: three fingers fires 100 % up to noise 0.012 and ±30° rotation; the
+  blade degrades sharply above noise 0.006 (its thresholds are small absolute
+  distances) and MediaPipe tracks edge-on hands poorly in practice. Three fingers is
+  the recommended shape; both stay bound for a live comparison.
+
+Distance: by default the pointer maps the camera frame directly, so drag speed
+follows hand distance (farther = slower per centimetre), which the user prefers.
+`drag.ref_hand_scale` records the hand size at the user's normal seating distance
+(measured by `calibrate`: 0.23 for this user, default 0.12) and `depth_gain = 1`
+normalizes against it if ever wanted.
+
 ## 11b. Pinch-and-drag (`core/pinch.py`, `core/pointer.py`, `core/drag.py`)
 
 Added 2026-10-08. Moves the window under the hand while the user pinches.
