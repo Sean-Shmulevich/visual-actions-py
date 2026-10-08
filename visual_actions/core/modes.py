@@ -45,7 +45,7 @@ class Timing:
     escape_fist_ns: int = 1_000_000_000
     escape_lost_ns: int = 1_500_000_000
     confidence_gain: float = 1.5  # fill rate at confidence 1.0, relative to wall clock
-    drag_lost_grace_ns: int = 2_000_000_000  # hand lost mid-drag: wait this long for it to come back
+    drag_lost_grace_ns: int = 2_500_000_000  # hand lost mid-drag: wait this long for it to come back
     leader_min_confidence: float = 0.8  # palm tokens below this neither start nor fill the hold
 
 

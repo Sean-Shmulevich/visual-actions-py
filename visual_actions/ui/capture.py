@@ -13,9 +13,10 @@ from ..paths import model_path
 
 
 class CaptureThread:
-    def __init__(self, camera: CameraSource, q: queue.Queue, use_gate: bool = True) -> None:
+    def __init__(self, camera: CameraSource, q: queue.Queue, use_gate: bool = True, sink: object | None = None) -> None:
         self.camera = camera
         self.q = q
+        self.sink = sink  # SessionRecorder-like: write_frame / write_hand / write_lost
         self.gate: HandGate = MotionGate() if use_gate else AlwaysOpenGate()
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._run, name="capture", daemon=True)
@@ -45,9 +46,13 @@ class CaptureThread:
                     continue
                 t_ns, frame = r
                 self.frames += 1
+                if self.sink is not None:
+                    self.sink.write_frame(frame, t_ns)
                 if not self.gate.open(frame, t_ns):
                     if seen:
                         self._put(HandLost(t_ns))
+                        if self.sink is not None:
+                            self.sink.write_lost(t_ns)
                         seen = False
                     continue
                 hands = tracker.track(frame, t_ns)
@@ -55,9 +60,13 @@ class CaptureThread:
                 self.gate.notify(t_ns, bool(hands))
                 if hands:
                     self._put(HandSeen(hands[0]))
+                    if self.sink is not None:
+                        self.sink.write_hand(hands[0])
                     seen = True
                 elif seen:
                     self._put(HandLost(t_ns))
+                    if self.sink is not None:
+                        self.sink.write_lost(t_ns)
                     seen = False
         except Exception as exc:  # noqa: BLE001 - surfaced to the UI through .error
             self.error = f"{type(exc).__name__}: {exc}"

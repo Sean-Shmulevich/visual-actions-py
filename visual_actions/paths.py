@@ -26,6 +26,10 @@ def models_dir() -> Path:
     return data_dir() / "models"
 
 
+def sessions_dir() -> Path:
+    return data_dir() / "sessions"
+
+
 def actions_dir() -> Path:
     return data_dir() / "actions"
 

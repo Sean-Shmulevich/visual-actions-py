@@ -1,0 +1,116 @@
+"""Session recording: camera video, a timestamped event log, and the raw landmarks.
+
+One folder per run under the data dir:
+    sessions/<YYYYmmdd-HHMMSS>/video.mp4      camera frames, elapsed time + mode burned in
+    sessions/<YYYYmmdd-HHMMSS>/events.log     "elapsed  wall-clock  kind  details", one line each
+    sessions/<YYYYmmdd-HHMMSS>/landmarks.jsonl raw HandFrames (same format as datasets/)
+
+Frames are written from the capture thread; events from the main thread. The writer
+is guarded by a lock. Video is 640x480 mp4v, roughly 1-2 MB per minute.
+"""
+
+from __future__ import annotations
+
+import json
+import threading
+import time
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+
+from .core.drag import DragEvent, DragPhase
+from .core.events import ActionFired, Bus, ModeChanged, SnapPreview, TokenEmitted
+from .core.recorder import Recorder
+from .core.types import HandFrame
+
+
+class SessionRecorder:
+    def __init__(self, root: Path, bus: Bus | None = None, fps: float = 30.0, log_tokens: bool = True) -> None:
+        self.dir = root / f"{datetime.now():%Y%m%d-%H%M%S}"  # noqa: DTZ005 - local time for a folder name
+        self.dir.mkdir(parents=True, exist_ok=True)
+        self.fps = fps
+        self.log_tokens = log_tokens
+        self.t0 = time.monotonic_ns()
+        self.started_wall = datetime.now()  # noqa: DTZ005
+        self._lock = threading.Lock()
+        self._video: Any = None
+        self._size: tuple[int, int] | None = None
+        self.frames = 0
+        self.mode = "idle"
+        self._log = (self.dir / "events.log").open("w", encoding="utf-8", buffering=1)
+        self._landmarks = Recorder(self.dir / "landmarks.jsonl")
+        self.log("session", f"started {self.started_wall:%Y-%m-%d %H:%M:%S}")
+        if bus is not None:
+            bus.subscribe(ModeChanged, self._on_mode)
+            bus.subscribe(ActionFired, self._on_action)
+            bus.subscribe(DragEvent, self._on_drag)
+            bus.subscribe(SnapPreview, self._on_snap)
+            if log_tokens:
+                bus.subscribe(TokenEmitted, self._on_token)
+
+    # -- capture thread -----------------------------------------------------------
+
+    def write_frame(self, frame: Any, t_ns: int) -> None:
+        import cv2
+
+        with self._lock:
+            if self._video is None:
+                h, w = frame.shape[:2]
+                self._size = (w, h)
+                fourcc = cv2.VideoWriter_fourcc(*"mp4v")  # type: ignore[attr-defined]
+                self._video = cv2.VideoWriter(str(self.dir / "video.mp4"), fourcc, self.fps, (w, h))
+            img = cv2.flip(frame, 1)  # selfie view, same as the preview
+            stamp = f"{self.elapsed_s(t_ns):8.2f}s  {self.mode}"
+            cv2.putText(img, stamp, (10, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 0, 0), 4)
+            cv2.putText(img, stamp, (10, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 255, 255), 1)
+            self._video.write(img)
+            self.frames += 1
+
+    def write_hand(self, hf: HandFrame) -> None:
+        with self._lock:
+            self._landmarks.write(hf)
+
+    def write_lost(self, t_ns: int) -> None:
+        with self._lock:
+            self._landmarks.write_lost(t_ns)
+
+    # -- main thread ----------------------------------------------------------------
+
+    def elapsed_s(self, t_ns: int | None = None) -> float:
+        return ((t_ns if t_ns is not None else time.monotonic_ns()) - self.t0) / 1e9
+
+    def log(self, kind: str, details: str, t_ns: int | None = None) -> None:
+        line = f"{self.elapsed_s(t_ns):9.3f}  {datetime.now():%H:%M:%S.%f}  {kind:7s} {details}\n"  # noqa: DTZ005
+        with self._lock:
+            self._log.write(line)
+
+    def _on_mode(self, ev: ModeChanged) -> None:
+        self.mode = ev.new
+        self.log("mode", f"{ev.old} -> {ev.new}" + (f" [{ev.namespace}]" if ev.namespace else ""), ev.t_ns)
+
+    def _on_token(self, ev: TokenEmitted) -> None:
+        t = ev.token
+        self.log("token", f"{t.name} conf={t.confidence:.2f} still={t.still}", t.t_ns)
+
+    def _on_action(self, ev: ActionFired) -> None:
+        self.log("action", f"{ev.action.name} {'ok' if ev.ok else 'FAILED ' + ev.message}", ev.t_ns)
+
+    def _on_drag(self, ev: DragEvent) -> None:
+        if ev.phase is DragPhase.MOVE:
+            return
+        extra = f" snapped={ev.snapped}" if ev.snapped else ""
+        self.log("drag", f"{ev.phase.value} {ev.window} @({ev.x:.0f},{ev.y:.0f}){extra}", ev.t_ns)
+
+    def _on_snap(self, ev: SnapPreview) -> None:
+        self.log("snap", f"preview {ev.zone}" if ev.zone else "preview cleared", ev.t_ns)
+
+    def close(self) -> dict[str, Any]:
+        with self._lock:
+            summary = {"dir": str(self.dir), "frames": self.frames, "seconds": round(self.elapsed_s(), 1), "landmark_frames": self._landmarks.count}
+            self._log.write(json.dumps({"summary": summary}) + "\n")
+            self._log.close()
+            self._landmarks.close()
+            if self._video is not None:
+                self._video.release()
+                self._video = None
+        return summary

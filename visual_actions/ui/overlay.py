@@ -61,6 +61,7 @@ class OverlayView(NSView):
                 HOLDING: NSColor.colorWithCalibratedRed_green_blue_alpha_(0.35, 0.65, 1.0, 1.0),
                 ARMED: NSColor.colorWithCalibratedRed_green_blue_alpha_(0.35, 0.85, 0.45, 1.0),
                 DRAGGING: NSColor.colorWithCalibratedRed_green_blue_alpha_(0.85, 0.55, 1.0, 1.0),
+                "lost": NSColor.colorWithCalibratedRed_green_blue_alpha_(0.95, 0.3, 0.35, 1.0),
             }.get(s["mode"], NSColor.whiteColor())
             if s["flash"]:
                 color = NSColor.colorWithCalibratedRed_green_blue_alpha_(1.0, 0.8, 0.2, 1.0)
@@ -82,8 +83,10 @@ class OverlayView(NSView):
 
 
 class Overlay:
-    def __init__(self, bus: Bus, hold_ns: int, timeout_ns: int, popup_ms: int) -> None:
+    def __init__(self, bus: Bus, hold_ns: int, timeout_ns: int, popup_ms: int, grace_ns: int = 2_500_000_000) -> None:
         self.hold_ns, self.timeout_ns, self.popup_ns = hold_ns, timeout_ns, popup_ms * 1_000_000
+        self.grace_ns = grace_ns
+        self.lost_since_ns: int | None = None
         self.mode = IDLE
         self.mode_since_ns = 0
         self.hold_fraction = 0.0
@@ -121,12 +124,18 @@ class Overlay:
         bus.subscribe(Tick, self._on_tick)
 
     def _on_drag(self, ev: DragEvent) -> None:
-        self.drag_window = ev.window if ev.phase in (DragPhase.START, DragPhase.MOVE) else ""
+        if ev.phase is DragPhase.PAUSE:
+            self.lost_since_ns = ev.t_ns
+        elif ev.phase in (DragPhase.RESUME, DragPhase.END):
+            self.lost_since_ns = None
+        self.drag_window = ev.window if ev.phase in (DragPhase.START, DragPhase.MOVE, DragPhase.RESUME, DragPhase.PAUSE) else ""
 
     def _on_mode(self, ev: ModeChanged) -> None:
         self.mode, self.mode_since_ns, self.deadline_ns = ev.new, ev.t_ns, ev.deadline_ns
         if ev.new != HOLDING:
             self.hold_fraction = 0.0
+        if ev.new != DRAGGING:
+            self.lost_since_ns = None
 
     def _on_hold(self, ev: HoldProgress) -> None:
         self.hold_fraction, self.hold_rate, self.hold_at_ns = ev.fraction, ev.rate, ev.t_ns
@@ -147,6 +156,9 @@ class Overlay:
         elif self.mode == HOLDING:
             p = min(1.0, self.hold_fraction + max(0.0, self.hold_rate) * (now - self.hold_at_ns) / 1e9)
             s.update(mode=HOLDING, progress=p, label="Hold…", sub=f"palm {min(100, int(p * 100))}%", flash=False)
+        elif self.mode == DRAGGING and self.lost_since_ns is not None:
+            left = max(0, self.grace_ns - (now - self.lost_since_ns))
+            s.update(mode="lost", progress=left / self.grace_ns, label="hand lost", sub=f"{left / 1e9:.1f}s to resume", flash=False)
         elif self.mode == DRAGGING:
             s.update(mode=DRAGGING, progress=1.0, label="drag", sub=self.drag_window[:34], flash=False)
         elif self.mode == ARMED and self.deadline_ns:

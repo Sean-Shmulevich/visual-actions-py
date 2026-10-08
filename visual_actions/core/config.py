@@ -22,7 +22,7 @@ class TimingConfig:
     tick_ms: int = 10  # queue drain + timers; 10 ms keeps drag moves from bunching into 50 ms bursts
     confidence_gain: float = 1.5  # hold fill rate at confidence 1.0 (1.0 = wall clock)
     leader_min_confidence: float = 0.8  # palm tokens below this neither start nor fill the hold
-    drag_lost_grace_s: float = 2.0  # hand lost mid-drag: window stays and waits this long for the hand
+    drag_lost_grace_s: float = 2.5  # hand lost mid-drag: window stays and waits this long for the hand
 
     def to_timing(self) -> Timing:
         s = 1_000_000_000
@@ -43,6 +43,7 @@ class FeedbackConfig:
     popup: bool = True
     cursor: bool = True  # on-screen marker during pinch activity (dragging, or a brief ring on a missed pinch)
     cursor_while_armed: bool = False  # also track the hand as a ring the whole time the window is armed
+    record_sessions: bool = True  # every start writes sessions/<stamp>/{video.mp4,events.log,landmarks.jsonl}
     dashboard: bool = True  # local live status page
     dashboard_port: int = 8765
 

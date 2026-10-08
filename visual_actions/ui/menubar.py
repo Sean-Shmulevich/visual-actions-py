@@ -14,6 +14,7 @@ from ..core.events import ActionFired, Bus, ModeChanged, Tick
 from ..core.pipeline import Pipeline
 from ..paths import config_path
 from ..platform import factory
+from ..session import SessionRecorder
 from .capture import CaptureThread
 
 
@@ -27,6 +28,7 @@ class VisualActionsApp(rumps.App):
         self.bus = Bus()
         self.q: queue.Queue = queue.Queue(maxsize=64)
         self.capture: CaptureThread | None = None
+        self.session: SessionRecorder | None = None
 
         Pipeline(self.bus, cfg, Dispatcher(self.bus, self.services.automation))
         if cfg.feedback.audio:
@@ -41,7 +43,7 @@ class VisualActionsApp(rumps.App):
             from .overlay import Overlay
 
             t = cfg.timing.to_timing()
-            Overlay(self.bus, t.leader_hold_ns, t.command_timeout_ns, cfg.timing.popup_ms)
+            Overlay(self.bus, t.leader_hold_ns, t.command_timeout_ns, cfg.timing.popup_ms, t.drag_lost_grace_ns)
 
         self.dashboard = None
         if cfg.feedback.dashboard:
@@ -64,6 +66,7 @@ class VisualActionsApp(rumps.App):
             self.dry_item,
             rumps.MenuItem("Open config file", callback=lambda _: subprocess.run(["open", "-t", str(config_path())], check=False)),
             rumps.MenuItem("Open dashboard", callback=self.open_dashboard),
+            rumps.MenuItem("Open sessions folder", callback=self.open_sessions),
             None,
             rumps.MenuItem("Quit", callback=self.quit),
         ]
@@ -81,7 +84,12 @@ class VisualActionsApp(rumps.App):
     def start(self) -> None:
         status = self.services.permissions.check(prompt=True)
         self._set_status(f"camera {status.camera.value}, accessibility {status.accessibility.value}")
-        self.capture = CaptureThread(self.services.camera, self.q, use_gate=self.use_gate)
+        self.session = None
+        if self.cfg.feedback.record_sessions:
+            from ..paths import sessions_dir
+
+            self.session = SessionRecorder(sessions_dir(), self.bus)
+        self.capture = CaptureThread(self.services.camera, self.q, use_gate=self.use_gate, sink=self.session)
         self.capture.start()
         self.toggle_item.title = "Stop"
 
@@ -89,6 +97,10 @@ class VisualActionsApp(rumps.App):
         if self.capture:
             self.capture.stop()
             self.capture = None
+        if self.session is not None:
+            summary = self.session.close()
+            self.session = None
+            self._set_status(f"saved session {summary['seconds']}s, {summary['frames']} frames")
         self.toggle_item.title = "Start"
         self._set_title("✋")
 
@@ -123,6 +135,12 @@ class VisualActionsApp(rumps.App):
                 if isinstance(owner, Pipeline):
                     owner.dispatcher.automation = self.services.automation
         self._set_status("dry run " + ("on" if self.dry_run else "off"))
+
+    def open_sessions(self, _item) -> None:
+        from ..paths import sessions_dir
+
+        sessions_dir().mkdir(parents=True, exist_ok=True)
+        subprocess.run(["open", str(sessions_dir())], check=False)
 
     def open_dashboard(self, _item) -> None:
         if self.dashboard is None:

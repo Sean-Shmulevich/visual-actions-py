@@ -30,7 +30,14 @@ def run_live(cfg: Config, dry_run: bool, use_gate: bool = True, verbose: bool = 
         bus.subscribe(ActionFired, lambda e: print(f"ACTION {e.action.name} ok={e.ok} {e.message}"))
 
     q: queue.Queue = queue.Queue(maxsize=64)
-    capture = CaptureThread(services.camera, q, use_gate=use_gate)
+    session = None
+    if cfg.feedback.record_sessions:
+        from .paths import sessions_dir
+        from .session import SessionRecorder
+
+        session = SessionRecorder(sessions_dir(), bus)
+        print(f"recording session to {session.dir}")
+    capture = CaptureThread(services.camera, q, use_gate=use_gate, sink=session)
     if cfg.feedback.dashboard:
         from .ui.dashboard import Dashboard
 
@@ -59,6 +66,8 @@ def run_live(cfg: Config, dry_run: bool, use_gate: bool = True, verbose: bool = 
         pass
     finally:
         capture.stop()
+        if session is not None:
+            print("saved session:", session.close())
         if capture.frames:
             print(f"frames={capture.frames} tracked={capture.tracked} ({100 * capture.tracked / capture.frames:.0f}% past the gate)")
     return 0
