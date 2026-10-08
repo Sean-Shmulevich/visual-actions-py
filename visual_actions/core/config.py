@@ -171,9 +171,9 @@ class Config:
     recognizer: RecognizerConfig = field(default_factory=RecognizerConfig)
     drag: DragConfig = field(default_factory=DragConfig)
     leader: LeaderConfig = field(default_factory=LeaderConfig)
+    presence: PresenceConfig = field(default_factory=PresenceConfig)
     namespaces: dict[str, NamespaceConfig] = field(default_factory=dict)
 
-    presence: PresenceConfig = field(default_factory=PresenceConfig)
     def leaders(self) -> dict[str, str]:
         """Leader gesture -> the namespace (root mode) it opens. First namespace wins a shared leader."""
         out: dict[str, str] = {}
@@ -249,9 +249,9 @@ def load_config(path: Path | None) -> Config:
     _merge(cfg.recognizer, data.get("recognizer", {}))
     _merge(cfg.drag, data.get("drag", {}))
     _merge(cfg.leader, data.get("leader", {}))
+    _merge(cfg.presence, data.get("presence", {}))
     if "namespaces" in data:
         # User bindings override defaults per gesture; default bindings the file does not
-    _merge(cfg.presence, data.get("presence", {}))
         # mention are kept, so a config saved before a gesture existed still gets it.
         merged: dict[str, NamespaceConfig] = {}
         for ns, nc in data["namespaces"].items():
