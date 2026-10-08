@@ -9,6 +9,9 @@ HOLDING --tick, evidence >= leader_hold--> ARMED(namespace, deadline)
 ARMED   --bound token--------------------> fire_mass += confidence; >= fire_evidence -> fire -> IDLE
 ARMED   --different bound token----------> fire_mass restarts with that gesture
 ARMED   --tick >= deadline---------------> IDLE (timeout)
+ARMED   --pinch START over a window------> DRAGGING (window grabbed under the mapped pointer)
+DRAGGING--pinch MOVE---------------------> window follows the hand (DragController)
+DRAGGING--pinch END or hand lost---------> IDLE
 ANY     --fist held escape_fist_s--------> IDLE   (only while fist is unbound in the namespace)
 ANY     --hand lost escape_lost_s--------> IDLE
 
@@ -23,11 +26,13 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from .bindings import Bindings
+from .drag import DragController
 from .events import Bus, HoldProgress, ModeChanged
+from .pinch import PinchEvent, PinchPhase
 from .recognizer import FIST, OPEN_PALM
 from .types import Action, Token
 
-IDLE, HOLDING, ARMED = "idle", "holding", "armed"
+IDLE, HOLDING, ARMED, DRAGGING = "idle", "holding", "armed", "dragging"
 
 
 @dataclass(frozen=True)
@@ -54,7 +59,9 @@ class ModeEngine:
         default_namespace: str = "window",
         fire_evidence: float = 0.9,
         min_token_confidence: float = 0.3,
+        drag: DragController | None = None,
     ) -> None:
+        self.drag = drag
         self.bus = bus
         self.bindings = bindings
         self.timing = timing
@@ -83,6 +90,8 @@ class ModeEngine:
 
     def on_token(self, tok: Token) -> None:
         self._lost_since_ns = None
+        if self.state == DRAGGING:
+            return  # per-frame pinch events own this state; tokens are ignored
         fist_is_escape = self.bindings.lookup(self.namespace or self.default_namespace, FIST) is None
         if tok.name == FIST and fist_is_escape:
             if self._fist_since_ns is None:
@@ -123,10 +132,28 @@ class ModeEngine:
                 self._go(IDLE, tok.t_ns)
                 self.fire(action, tok.t_ns)
 
+    def on_pinch(self, ev: PinchEvent) -> None:
+        """Per-frame pinch input. A pinch while ARMED grabs the window under the hand;
+        while DRAGGING, moves follow the hand and the release ends the drag."""
+        if self.drag is None:
+            return
+        self._lost_since_ns = None
+        if self.state == ARMED and ev.phase is PinchPhase.START:
+            if self.drag.on_pinch(ev):
+                self._go(DRAGGING, ev.t_ns)
+            return  # a miss keeps the window armed
+        if self.state == DRAGGING:
+            self.drag.on_pinch(ev)
+            if ev.phase is PinchPhase.END:
+                self._go(IDLE, ev.t_ns)
+
     def on_hand_lost(self, t_ns: int) -> None:
         if self._lost_since_ns is None:
             self._lost_since_ns = t_ns
         self._fist_since_ns = None
+        if self.state == DRAGGING and self.drag is not None:
+            self.drag.cancel(t_ns)  # the window stays where it is; the drag just ends
+            self._go(IDLE, t_ns)
 
     def on_tick(self, t_ns: int) -> None:
         if (

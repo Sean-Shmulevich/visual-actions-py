@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
 from ..core.config import Config, default_config
 from ..core.dispatcher import Dispatcher
+from ..core.drag import DragEvent
 from ..core.events import ActionFired, Bus, HandLost, HandSeen, ModeChanged, Tick, TokenEmitted
 from ..core.pipeline import Pipeline
 from ..core.recorder import read_session
@@ -13,13 +15,37 @@ from ..core.types import HandFrame
 from ..platform.mock.automation import MockAutomation
 
 
+@dataclass
+class ReplayResult:
+    fired: list[ActionFired]
+    drags: list[DragEvent]
+    automation: MockAutomation
+    modes: list[ModeChanged]
+
+
 def replay(path: Path, config: Config | None = None, verbose: bool = False, tail_s: float = 1.0) -> list[ActionFired]:
+    return replay_full(path, config, verbose, tail_s).fired
+
+
+def replay_full(
+    path: Path,
+    config: Config | None = None,
+    verbose: bool = False,
+    tail_s: float = 1.0,
+    automation: MockAutomation | None = None,
+) -> ReplayResult:
     cfg = config or default_config()
     bus = Bus()
-    automation = MockAutomation()
+    automation = automation or MockAutomation()
     Pipeline(bus, cfg, Dispatcher(bus, automation))
     fired: list[ActionFired] = []
+    drags: list[DragEvent] = []
+    modes: list[ModeChanged] = []
     bus.subscribe(ActionFired, fired.append)
+    bus.subscribe(DragEvent, drags.append)
+    bus.subscribe(ModeChanged, modes.append)
+    if verbose:
+        bus.subscribe(DragEvent, lambda e: print(f"{e.t_ns / 1e9:7.3f}s drag  {e.phase.value:5s} {e.window} @({e.x:.0f},{e.y:.0f})"))
     if verbose:
         bus.subscribe(TokenEmitted, lambda e: print(f"{e.token.t_ns / 1e9:7.3f}s token {e.token.name:10s} conf={e.token.confidence:.2f} still={e.token.still}"))
         bus.subscribe(ModeChanged, lambda e: print(f"{e.t_ns / 1e9:7.3f}s mode  {e.old} -> {e.new}"))
@@ -28,8 +54,9 @@ def replay(path: Path, config: Config | None = None, verbose: bool = False, tail
     tick_ns = cfg.timing.tick_ms * 1_000_000
     clock: int | None = None
     records = list(read_session(path))
+    result = ReplayResult(fired, drags, automation, modes)
     if not records:
-        return fired
+        return result
     last_t = max(r if isinstance(r, int) else r.t_ns for r in records)
     end_t = last_t + int(tail_s * 1e9)
 
@@ -51,4 +78,4 @@ def replay(path: Path, config: Config | None = None, verbose: bool = False, tail
             advance(r)
             bus.publish(HandLost(r))
     advance(end_t)
-    return fired
+    return result

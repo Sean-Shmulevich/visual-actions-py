@@ -45,6 +45,10 @@ def pose(name: str) -> list[tuple[float, float]]:
     elif name == "two_up":
         thumb = THUMB_TUCKED
         fingers = {"index": (up, True), "middle": (up, True), "ring": (up, False), "pinky": (up, False)}
+    elif name == "pinch":  # thumb tip meets a curled index tip, other fingers relaxed-curled
+        thumb = [(-0.45, -0.35), (-0.55, -0.75), (-0.45, -1.15), (-0.30, -1.45)]
+        index_curl = [MCPS["index"], (-0.45, -1.42), (-0.40, -1.58), (-0.28, -1.43)]
+        fingers = {"index": index_curl, "middle": (up, False), "ring": (up, False), "pinky": (up, False)}
     elif name == "none":  # index and pinky out, nothing we bind
         thumb = THUMB_OUT
         fingers = {"index": (up, True), "middle": (up, False), "ring": (up, False), "pinky": (up, True)}
@@ -52,7 +56,11 @@ def pose(name: str) -> list[tuple[float, float]]:
         raise ValueError(name)
     pts: list[tuple[float, float]] = [(0.0, 0.0)] + thumb
     for f in ("index", "middle", "ring", "pinky"):
-        d, ext = fingers[f]
+        spec = fingers[f]
+        if isinstance(spec, list):  # explicit 4 joints
+            pts += spec
+            continue
+        d, ext = spec
         n = math.hypot(*d)
         pts += _finger(MCPS[f], (d[0] / n, d[1] / n), ext)
     return pts
@@ -78,6 +86,55 @@ def hand_frame(
         rx = 1.0 - ux if mirror_to_raw else ux
         lms.append(Landmark(rx, uy, 0.0))
     return HandFrame(t_ns=t_ns, hand=hand, landmarks=tuple(lms), confidence=0.95)
+
+
+def drag_frames(
+    start_t: float,
+    path_points: list[tuple[float, float]],
+    seconds: float,
+    fps: float = 30.0,
+    scale: float = 0.12,
+    jitter: float = 0.0005,
+    rng: random.Random | None = None,
+) -> list[HandFrame]:
+    """A pinched hand whose centre moves along `path_points` (user-frame 0..1) over `seconds`."""
+    rng = rng or random.Random(2)
+    n = max(2, int(seconds * fps))
+    out = []
+    for i in range(n):
+        u = i / (n - 1) * (len(path_points) - 1)
+        k = min(int(u), len(path_points) - 2)
+        f = u - k
+        (x0, y0), (x1, y1) = path_points[k], path_points[k + 1]
+        c = (x0 + (x1 - x0) * f, y0 + (y1 - y0) * f)
+        out.append(hand_frame("pinch", int((start_t + i / fps) * 1e9), center=c, scale=scale, jitter=jitter, rng=rng))
+    return out
+
+
+def write_drag_session(
+    path: Path,
+    palm_seconds: float = 1.5,
+    drag_path: list[tuple[float, float]] | None = None,
+    drag_seconds: float = 1.0,
+    palm_center: tuple[float, float] = (0.5, 0.5),
+    fps: float = 30.0,
+) -> None:
+    """Leader palm, then a pinch-drag along drag_path (default: palm centre -> +0.2 x, +0.1 y), then release."""
+    rec = Recorder(path)
+    rng = random.Random(3)
+    t = 0.0
+    for _ in range(int(palm_seconds * fps)):
+        rec.write(hand_frame("open_palm", int(t * 1e9), center=palm_center, jitter=0.0005, rng=rng))
+        t += 1 / fps
+    pts = drag_path or [palm_center, (palm_center[0] + 0.2, palm_center[1] + 0.1)]
+    for hf in drag_frames(t, pts, drag_seconds, fps=fps, rng=rng):
+        rec.write(hf)
+    t += drag_seconds
+    for _ in range(int(0.4 * fps)):  # release: open palm again, then lost
+        rec.write(hand_frame("open_palm", int(t * 1e9), center=pts[-1], jitter=0.0005, rng=rng))
+        t += 1 / fps
+    rec.write_lost(int(t * 1e9))
+    rec.close()
 
 
 def write_session(path: Path, segments: list[tuple[str, float]], fps: float = 30.0, jitter: float = 0.0005) -> None:

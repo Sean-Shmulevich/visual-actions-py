@@ -62,6 +62,23 @@ class RecognizerConfig:
 
 
 @dataclass
+class DragConfig:
+    enabled: bool = True
+    pinch_on: float = 0.3  # canonical thumb-index distance to start a pinch
+    pinch_off: float = 0.5  # distance to release (hysteresis)
+    debounce_frames: int = 2
+    box_x0: float = 0.15  # reach box in the camera frame mapped to the full screen
+    box_x1: float = 0.85
+    box_y0: float = 0.15
+    box_y1: float = 0.85
+    depth_gain: float = 0.0  # 0 = ignore hand distance; 1 = box scales with hand size
+    ref_hand_scale: float = 0.12
+    gain: float = 1.0  # window pixels per pointer pixel
+    smooth_min_cutoff: float = 1.0
+    smooth_beta: float = 0.02
+
+
+@dataclass
 class NamespaceConfig:
     leader: str = "open_palm"
     bindings: list[dict[str, Any]] = field(default_factory=list)
@@ -73,6 +90,7 @@ class Config:
     feedback: FeedbackConfig = field(default_factory=FeedbackConfig)
     camera: CameraConfig = field(default_factory=CameraConfig)
     recognizer: RecognizerConfig = field(default_factory=RecognizerConfig)
+    drag: DragConfig = field(default_factory=DragConfig)
     namespaces: dict[str, NamespaceConfig] = field(default_factory=dict)
 
     def bindings(self) -> Bindings:
@@ -119,6 +137,7 @@ def load_config(path: Path | None) -> Config:
     _merge(cfg.feedback, data.get("feedback", {}))
     _merge(cfg.camera, data.get("camera", {}))
     _merge(cfg.recognizer, data.get("recognizer", {}))
+    _merge(cfg.drag, data.get("drag", {}))
     if "namespaces" in data:
         cfg.namespaces = {
             ns: NamespaceConfig(leader=nc.get("leader", "open_palm"), bindings=list(nc.get("bindings", [])))

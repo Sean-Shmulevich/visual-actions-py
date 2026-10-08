@@ -51,7 +51,7 @@ class PinchDetector:
     """Hysteresis: pinched when distance < on_threshold, released when > off_threshold.
     `debounce_frames` consecutive frames are needed to change state."""
 
-    def __init__(self, on_threshold: float = 0.35, off_threshold: float = 0.55, debounce_frames: int = 2) -> None:
+    def __init__(self, on_threshold: float = 0.3, off_threshold: float = 0.5, debounce_frames: int = 2) -> None:
         if off_threshold <= on_threshold:
             raise ValueError("off_threshold must exceed on_threshold")
         self.on_threshold = on_threshold
@@ -81,8 +81,8 @@ class PinchDetector:
                 self.pinched = want
                 self._pending = 0
                 return PinchEvent(hf.t_ns, PinchPhase.START if want else PinchPhase.END, x, y, s, d)
-        else:
-            self._pending = 0
+            return None  # a change is pending: hold position, no MOVE (an opening hand jumps the midpoint)
+        self._pending = 0
         if self.pinched:
             return PinchEvent(hf.t_ns, PinchPhase.MOVE, x, y, s, d)
         return None
