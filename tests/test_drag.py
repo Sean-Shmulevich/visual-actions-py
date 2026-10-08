@@ -95,8 +95,8 @@ def test_engine_armed_pinch_enters_dragging_and_release_returns_idle():
     eng.on_token(Token(int(1.35 * S), "h_left", 1.0, Hand.RIGHT, True))
     assert eng.state == DRAGGING
     eng.on_pinch(pev(PinchPhase.END, int(1.4 * S), 0.7, 0.45))
-    assert eng.state == IDLE
-    assert [m.new for m in modes][-3:] == [ARMED, DRAGGING, IDLE]
+    assert eng.state == ARMED  # dropped: grab another window without the palm again
+    assert [m.new for m in modes][-3:] == [ARMED, DRAGGING, ARMED]
     assert [d.phase for d in drags] == [DragPhase.START, DragPhase.MOVE, DragPhase.END]
 
 

@@ -37,7 +37,7 @@ def test_drag_moves_window_by_mapped_delta(session):
     r = replay_full(session, cfg_full_box(), automation=big_window_mock())
     phases = [d.phase for d in r.drags]
     assert phases[0] is DragPhase.START and phases[-1] is DragPhase.END
-    assert [m.new for m in r.modes] == ["holding", "armed", "dragging", "idle"]
+    assert [m.new for m in r.modes] == ["holding", "armed", "dragging", "armed"]
     win = r.automation.windows[0].frame
     # pointer moved +0.2 of 1440 and +0.1 of 900 (pinch point tracks the hand centre)
     assert abs(win.x - 0.2 * 1440) < 25 and abs(win.y - 0.1 * 900) < 20

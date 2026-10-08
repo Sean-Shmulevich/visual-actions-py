@@ -3,7 +3,7 @@
 from visual_actions.core.bindings import Bindings
 from visual_actions.core.config import default_config
 from visual_actions.core.events import Bus, ModeChanged
-from visual_actions.core.modes import ARMED, IDLE, REPEAT, ModeEngine, Timing
+from visual_actions.core.modes import ARMED, REPEAT, ModeEngine, Timing
 from visual_actions.core.types import Action, ActionKind, Binding, Hand, Token
 
 S = 1_000_000_000
@@ -63,21 +63,28 @@ def test_repeat_window_times_out_to_idle_and_refreshes_on_each_repeat():
     eng.on_tick(int(2.8 * S))
     assert eng.state == REPEAT
     eng.on_tick(int(4.2 * S))
-    assert eng.state == IDLE and len(fired) == 2
+    assert eng.state == ARMED and len(fired) == 2  # slide window over: back in the menu
 
 
-def test_other_shapes_are_ignored_during_repeat():
+def test_unsure_or_unbound_shapes_are_ignored_during_repeat():
     eng, fired, modes = make()
     eng.on_token(tok("two_up", int(1.2 * S), 0.50))
-    eng.on_token(tok("h_left", int(1.4 * S), 0.70))  # bound elsewhere, but not the repeated shape
-    eng.on_token(tok("open_palm", int(1.6 * S), 0.70))
+    eng.on_token(tok("h_left", int(1.4 * S), 0.70, conf=0.6))  # bound, but not sure enough to leave the slide
+    eng.on_token(tok("open_palm", int(1.6 * S), 0.70))  # unbound
     assert len(fired) == 1 and eng.state == REPEAT
 
 
-def test_non_repeatable_action_returns_to_idle():
+def test_a_confident_other_command_leaves_the_slide_and_fires():
+    eng, fired, modes = make()
+    eng.on_token(tok("two_up", int(1.2 * S), 0.50))
+    eng.on_token(tok("h_left", int(1.4 * S), 0.70))
+    assert [f[0] for f in fired] == ["Next tab", "Cmd+Tab"] and eng.state == ARMED
+
+
+def test_non_repeatable_action_returns_to_the_menu():
     eng, fired, modes = make()
     eng.on_token(tok("h_left", int(1.2 * S), 0.50))
-    assert fired[0][0] == "Cmd+Tab" and eng.state == IDLE
+    assert fired[0][0] == "Cmd+Tab" and eng.state == ARMED
     eng.on_token(tok("h_left", int(1.4 * S), 0.70))
     assert len(fired) == 1
 

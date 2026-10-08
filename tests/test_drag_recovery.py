@@ -62,7 +62,7 @@ def test_hand_back_pinching_resumes_without_a_jump():
     eng.on_pinch(pev(PinchPhase.MOVE, int(2.1 * S), 0.3, 0.8))  # +100 px relative to the new anchor
     assert round(wins.windows[0]["x"]) == 500
     eng.on_pinch(pev(PinchPhase.END, int(2.2 * S), 0.3, 0.8))
-    assert eng.state == IDLE and drags[-1].phase is DragPhase.END
+    assert eng.state == ARMED and drags[-1].phase is DragPhase.END  # a normal release: back in the menu
 
 
 def test_grace_expiry_drops_in_place():
@@ -124,6 +124,6 @@ def test_pipeline_gap_in_the_middle_of_a_drag_resumes(tmp_path: Path):
     r = replay_full(p, cfg, automation=mock)
     phases = [x.phase for x in r.drags if x.phase is not DragPhase.MOVE]
     assert phases == [DragPhase.START, DragPhase.PAUSE, DragPhase.RESUME, DragPhase.END]
-    assert [m.new for m in r.modes] == ["holding", "armed", "dragging", "idle"]
+    assert [m.new for m in r.modes] == ["holding", "armed", "dragging", "armed"]
     # two 0.1-of-screen moves, no jump from the hand reappearing 0.3 further left
     assert abs(r.automation.windows[0].frame.x - 0.2 * 1440) < 40

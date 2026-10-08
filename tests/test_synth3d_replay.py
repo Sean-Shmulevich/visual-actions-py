@@ -27,7 +27,7 @@ def mock():
 @pytest.mark.parametrize("name", ["pinch_drag_0", "pinch_drag_1", "pinch_drag_2"])
 def test_pinch_drag_sequences_move_the_window(name):
     r = replay_full(FIX / f"{name}.jsonl", cfg(), automation=mock())
-    assert [m.new for m in r.modes] == ["holding", "armed", "dragging", "idle"]
+    assert [m.new for m in r.modes] == ["holding", "armed", "dragging", "armed"]
     phases = [d.phase for d in r.drags]
     assert phases[0] is DragPhase.START and phases[-1] is DragPhase.END and phases.count(DragPhase.MOVE) >= 10
     f = r.automation.windows[0].frame
