@@ -7,6 +7,7 @@ app changes. Pass --dry to only check the permission.
 import sys
 import time
 
+from AppKit import NSWorkspace
 from ApplicationServices import AXIsProcessTrustedWithOptions, kAXTrustedCheckOptionPrompt
 from Quartz import (
     CGEventCreateKeyboardEvent,
@@ -15,7 +16,6 @@ from Quartz import (
     kCGEventFlagMaskCommand,
     kCGHIDEventTap,
 )
-from AppKit import NSWorkspace
 
 KEY_TAB = 0x30
 

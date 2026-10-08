@@ -241,6 +241,21 @@ asserts that recording and live paths produce identical vectors for the same fra
 Order: rules first; if a rule fires with confidence ≥ 0.9 it wins, else the model's
 answer is used. Ambiguity band for tier 3 is 0.45–0.75 for 300 ms (config).
 
+Calibration note (2026-10-08, three 8 s webcam samples in `tests/fixtures/real/`):
+- Straight fingers score 0.8–0.95 on the path-ratio extension metric, not 1.0, because
+  of foreshortening. Thresholds are now extended ≥ 0.7, curled ≤ 0.45.
+- Thumb "out" vs "tucked" is best read as thumb-tip to index-MCP distance: ~0.55 on an
+  open palm, ~0.16 in the H sign. Threshold 0.35.
+- With those, the rules hit the H sign on 212/212 frames and the open palm on 120/227.
+  The open-palm misses are foreshortened frames where the middle/ring/pinky ratio dips
+  under 0.7. The leader therefore needs either a looser rule with the smoother's
+  majority vote doing the work, or (better) the trained tier 2 model covering
+  `open_palm` as well, with the rule kept only as a fallback.
+- A fist seen knuckles-first is indistinguishable from extended fingers in the 2D
+  ratio; the `fist` recording classified as 113 none / 36 h_left / 6 open_palm. The
+  fist escape must come from the trained model, not the rule. Until then the
+  hand-out-of-frame escape is the reliable one.
+
 ## 10. Tier 3 arbiter (`core/arbiter.py`)
 
 `Arbiter.decide(features, candidate: str) -> float | None` returns a probability or
@@ -388,6 +403,13 @@ Minimum data for v0.1: 2,000 frames each of `h_left`, `h_right`, `open_palm`,
 `uv run pytest` green on a machine with no camera, `uv run python -m visual_actions
 --replay tests/fixtures/h_left.jsonl` prints one Cmd+Tab action, and this document
 matches the code.
+
+Status 2026-10-08: done. 33 tests, replay fires exactly one Cmd+Tab, ruff and
+pyright clean. Bonus beyond scope: the live loop (`python -m visual_actions --dry`)
+already runs camera → gate → tracker → rules → smoother → modes → mock automation
+with terminal output, and `tools/record.py` writes datasets. Not yet shown: a full
+live arm-and-fire with a real hand, blocked on leader detection reliability (§9
+calibration note). That is milestone 3/4 work.
 
 ## 19. Open questions carried from the PRD
 

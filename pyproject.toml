@@ -39,5 +39,10 @@ target-version = "py312"
 pythonVersion = "3.12"
 typeCheckingMode = "standard"
 
+# PyObjC ships no stubs; the macOS driver is spike-verified at runtime instead.
+[[tool.pyright.executionEnvironments]]
+root = "visual_actions/platform/macos"
+reportAttributeAccessIssue = false
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
