@@ -44,10 +44,10 @@ class SoundFeedback:
         self._mode = ev.new
         if ev.new in (DRAGGING, ADJUST):
             play("grab")
-        elif ev.old in (DRAGGING, ADJUST) and ev.new == IDLE:
+        elif ev.old in (DRAGGING, ADJUST) and ev.new in (IDLE, ARMED):
             play("drop")
-        elif ev.new == ARMED:
-            play("armed")
+        elif ev.new == ARMED and ev.old == HOLDING:
+            play("armed")  # only on opening a menu, not on returning to it after each chained command
         elif ev.old == ARMED and ev.new == IDLE and self._fired_at != ev.t_ns:
             play("timeout")  # left ARMED without an action at this instant
         elif ev.old == HOLDING and ev.new == IDLE:
