@@ -24,7 +24,7 @@ def test_default_bindings():
     assert b.lookup("window", "h_right").name == "Cmd+Shift+Tab"
     assert b.lookup("window", "point_up").arg("chord") == "cmd+shift+["
     assert parse_chord(b.lookup("window", "two_up").arg("chord")).key == "]"
-    assert b.lookup("window", "fist") is None
+    assert b.lookup("window", "fist") is None  # fist is the escape, never bound by default
 
 
 def test_config_round_trip(tmp_path: Path):

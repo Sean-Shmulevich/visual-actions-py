@@ -48,3 +48,9 @@ def test_no_leader_fires_nothing(fixtures):
 
 def test_fist_escape_cancels_the_window(fixtures):
     assert replay(fixtures / "escape_fist.jsonl") == []
+
+
+def test_a_bound_fist_would_fire_instead(fixtures):
+    cfg = default_config()
+    cfg.namespaces["window"].bindings.append({"gesture": "fist", "action": {"kind": "key", "name": "Fist", "chord": "ctrl+down"}})
+    assert [f.action.name for f in replay(fixtures / "escape_fist.jsonl", cfg)] == ["Fist"]
