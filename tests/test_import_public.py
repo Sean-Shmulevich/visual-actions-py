@@ -47,7 +47,9 @@ def test_map_class_known_and_unknown():
     assert map_class("stop") == "open_palm"
     assert map_class("one") == "point_up"
     assert map_class("peace") == "two_up"
-    assert map_class("like") == "none"
+    assert map_class("like") == "thumbs_up"
+    assert map_class("dislike") == "thumbs_down"
+    assert map_class("rock") == "none"
     assert map_class("something_new") == "none"
 
 
@@ -61,7 +63,7 @@ def _make_images(root: Path, layout: dict[str, list[str]]) -> None:
 
 def test_import_images_filters_and_writes_per_class(tmp_path: Path):
     root = tmp_path / "ds"
-    _make_images(root, {"ok": ["a", "b", "two_c", "nohand_d", "weak_e"], "palm": ["a", "b", "c"], "like": ["a"]})
+    _make_images(root, {"ok": ["a", "b", "two_c", "nohand_d", "weak_e"], "palm": ["a", "b", "c"], "call": ["a"]})
     out = tmp_path / "datasets"
     tracker = FakeTracker()
     report = import_images(root, "fake", out, tracker, reader=lambda p: p)
@@ -104,7 +106,7 @@ def test_hagrid_record_to_frames_handles_missing_landmarks():
 def test_import_hagrid_annotations_caps_and_pairs_pinch(tmp_path: Path):
     data = {f"ok{i}": _hagrid_record("ok") for i in range(10)}
     data.update({f"palm{i}": _hagrid_record("palm") for i in range(4)})
-    data.update({f"like{i}": _hagrid_record("like") for i in range(4)})
+    data.update({f"like{i}": _hagrid_record("call") for i in range(4)})
     data["two"] = _hagrid_record("ok", n_hands=2)
     report = import_hagrid_annotations([("ok.json", data)], "test", tmp_path / "datasets", per_class=5)
     assert report["counts"]["pinch"] == 5

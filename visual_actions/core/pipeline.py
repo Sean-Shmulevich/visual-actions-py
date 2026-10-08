@@ -13,6 +13,7 @@ from .normalize import to_user_frame
 from .pinch import PinchDetector
 from .pointer import PointerMap, ReachBox, SmoothedPointer
 from .recognizer import (
+    FIST,
     NONE,
     OPEN_PALM,
     CompositeRecognizer,
@@ -106,6 +107,12 @@ class Pipeline:
         name, conf = self.recognizer.classify(hf)
         if name == OPEN_PALM and self.config.recognizer.palm_strict and self._palm_rule.classify(hf)[0] != OPEN_PALM:
             name, conf = NONE, 0.5  # the model says palm but the geometry does not: not a leader
+        elif name == FIST:
+            # A fist cancels everything, so it must not swallow a thumbs up/down: if the
+            # geometry shows the thumb clearly out, trust the rule's thumb label instead.
+            rule_name, rule_conf = self._palm_rule.classify(hf)
+            if rule_name.startswith("thumbs_"):
+                name, conf = rule_name, max(conf, rule_conf)
         if name == OPEN_PALM and palm_vetoed(hf, ev.face_overlap, self.config):
             name, conf = NONE, 0.5  # a hand on a face is not a leader
             if hf.t_ns - self._last_veto_ns >= 500_000_000:

@@ -51,8 +51,8 @@ CLASS_MAP: dict[str, str] = {
     "peace": "two_up",
     "two_up": "two_up",
     # explicit "none" families, listed so the mapping is reviewable
-    "like": "none",
-    "dislike": "none",
+    "like": "thumbs_up",
+    "dislike": "thumbs_down",
     "call": "none",
     "rock": "none",
     "mute": "none",
