@@ -27,6 +27,8 @@ class TimingConfig:
     quick_command_min_confidence: float = 0.85
     drag_lost_grace_s: float = 2.5  # hand lost mid-drag: window stays and waits this long for the hand
     repeat_window_s: float = 1.5  # after a repeatable action, a sideways slide of the same shape fires it again within this
+    swipe_chain_window_s: float = 2.5  # after a swipe, stay armed this long for the next flick
+    swipe_return_ignore_s: float = 0.7  # a reverse stroke this soon after a swipe is just the hand coming back
     repeat_slide: float = 0.10  # the slide: wrist must move this fraction of the frame width sideways
 
     def to_timing(self) -> Timing:
@@ -44,6 +46,8 @@ class TimingConfig:
             quick_command_min_confidence=self.quick_command_min_confidence,
             repeat_window_ns=int(self.repeat_window_s * s),
             repeat_slide=self.repeat_slide,
+            swipe_chain_window_ns=int(self.swipe_chain_window_s * s),
+            swipe_return_ignore_ns=int(self.swipe_return_ignore_s * s),
         )
 
 

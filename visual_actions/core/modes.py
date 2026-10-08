@@ -56,6 +56,8 @@ class Timing:
     hold_break_tokens: int = 2  # consecutive non-palm tokens tolerated during a hold (classifier flicker)
     quick_command_min_hold_ns: int = 300_000_000  # a clear palm this long, then a confident bound gesture, arms + fires at once
     quick_command_min_confidence: float = 0.85
+    swipe_chain_window_ns: int = 2_500_000_000  # after a swipe, stay armed this long for the next flick
+    swipe_return_ignore_ns: int = 700_000_000  # a reverse stroke this soon after a swipe is the hand coming back
     repeat_slide: float = 0.10  # sideways wrist travel (fraction of frame width) that counts as a slide
     leader_min_confidence: float = 0.8  # palm tokens below this neither start nor fill the hold
 
@@ -95,6 +97,7 @@ class ModeEngine:
         self._fire_mass: float = 0.0
         self._hold_rate: float = 0.0
         self._hold_misses = 0
+        self._last_swipe: tuple[int, str] | None = None  # (t_ns, direction)
         self._repeat_action: Action | None = None
         self._repeat_gesture: str | None = None
         self._repeat_anchor_x: float = 0.5
@@ -234,10 +237,16 @@ class ModeEngine:
         action = self.bindings.lookup(self.namespace or self.default_namespace, f"{ev.shape}_swipe_{ev.direction.value}")
         if action is None:
             return
+        last = self._last_swipe
+        if last is not None and last[1] != ev.direction.value and ev.t_ns - last[0] < self.timing.swipe_return_ignore_ns:
+            # the hand coming back after a swipe, not a new command
+            self._deadline_ns = ev.t_ns + self.timing.swipe_chain_window_ns
+            return
         if action.arg("repeat") in ("true", "True", "1"):
-            # chain: stay armed for the repeat window so the next flick fires without a new palm
-            self._deadline_ns = ev.t_ns + self.timing.repeat_window_ns
+            # chain: stay armed so the next flick fires without a new palm
+            self._deadline_ns = ev.t_ns + self.timing.swipe_chain_window_ns
             self.repeat_count += 1
+            self._last_swipe = (ev.t_ns, ev.direction.value)
             self.bus.publish(ModeChanged(ev.t_ns, ARMED, ARMED, self.namespace, self._deadline_ns))
         else:
             self._go(IDLE, ev.t_ns)
@@ -291,6 +300,7 @@ class ModeEngine:
             self._fire_gesture, self._fire_mass = None, 0.0
             self._hold_rate = 0.0
             self._repeat_action, self._repeat_gesture, self.repeat_count = None, None, 0
+            self._last_swipe = None
         self.bus.publish(
             ModeChanged(t_ns=t_ns, old=old, new=new, namespace=self.namespace, deadline_ns=self._deadline_ns)
         )
