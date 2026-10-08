@@ -81,7 +81,7 @@ def main() -> int:
         pred = m.predict(x[te])
         labels = sorted(set(y))
         print("held-out by session:")
-        print(classification_report(y[te], pred, labels=labels, zero_division=0))
+        print(classification_report(y[te], pred, labels=labels, zero_division=0))  # pyright: ignore[reportArgumentType]
         print("confusion (rows=true, cols=pred):", labels)
         print(confusion_matrix(y[te], pred, labels=labels))
     else:

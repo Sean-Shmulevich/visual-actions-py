@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from ...core.automation import MediaVerb, NativeResult, Rect, WindowRef
+from ...core.automation import MediaVerb, NativeResult, Rect, WindowInfo, WindowRef
 
 log = logging.getLogger(__name__)
 
@@ -26,3 +26,15 @@ class WindowsAutomation:
     def run_native(self, script_path: Path, timeout_s: float) -> NativeResult:
         log.info("stub run_native %s", script_path)
         return NativeResult(ok=True, stdout="stub")
+
+    def list_windows(self) -> list[WindowInfo]:
+        return []
+
+    def window_at(self, x: float, y: float) -> WindowInfo | None:
+        return None
+
+    def move_window(self, win: WindowInfo, x: float, y: float) -> bool:
+        return False
+
+    def screen_size(self) -> tuple[int, int]:
+        return (1440, 900)

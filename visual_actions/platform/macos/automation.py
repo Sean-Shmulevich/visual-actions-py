@@ -11,8 +11,9 @@ import sys
 import time
 from pathlib import Path
 
-from ...core.automation import MediaVerb, NativeResult, Rect, WindowRef
+from ...core.automation import MediaVerb, NativeResult, Rect, WindowInfo, WindowRef
 from ...core.chords import parse_chord
+from .windows import MacWindows
 
 MOD_KEYCODES = {"cmd": 0x37, "shift": 0x38, "alt": 0x3A, "ctrl": 0x3B, "fn": 0x3F}
 KEYCODES = {
@@ -34,6 +35,7 @@ class MacAutomation:
         import Quartz
 
         self._q = Quartz
+        self.windows = MacWindows()
         self._flag = {
             "cmd": Quartz.kCGEventFlagMaskCommand,
             "shift": Quartz.kCGEventFlagMaskShift,
@@ -96,3 +98,17 @@ class MacAutomation:
         except subprocess.TimeoutExpired:
             return NativeResult(ok=False, stderr=f"timed out after {timeout_s}s")
         return NativeResult(ok=p.returncode == 0, stdout=p.stdout.strip(), stderr=p.stderr.strip())
+
+    # -- windows -------------------------------------------------------------
+
+    def list_windows(self) -> list[WindowInfo]:
+        return self.windows.list_windows()
+
+    def window_at(self, x: float, y: float) -> WindowInfo | None:
+        return self.windows.window_at(x, y)
+
+    def move_window(self, win: WindowInfo, x: float, y: float) -> bool:
+        return self.windows.move_window(win, x, y)
+
+    def screen_size(self) -> tuple[int, int]:
+        return self.windows.screen_size()

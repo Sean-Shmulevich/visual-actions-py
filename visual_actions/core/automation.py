@@ -31,6 +31,18 @@ class Rect:
 
 
 @dataclass(frozen=True)
+class WindowInfo:
+    """An on-screen window. `frame` is in global screen points, origin top-left."""
+
+    id: int
+    pid: int
+    app: str
+    title: str
+    frame: Rect
+    layer: int = 0
+
+
+@dataclass(frozen=True)
 class NativeResult:
     ok: bool
     stdout: str = ""
@@ -47,3 +59,21 @@ class DesktopAutomation(Protocol):
     def media(self, verb: MediaVerb) -> None: ...
 
     def run_native(self, script_path: Path, timeout_s: float) -> NativeResult: ...
+
+    # -- windows (screen points, origin top-left) ---------------------------
+
+    def list_windows(self) -> list[WindowInfo]:
+        """On-screen normal windows, front-most first."""
+        ...
+
+    def window_at(self, x: float, y: float) -> WindowInfo | None:
+        """The front-most window containing the point, or None."""
+        ...
+
+    def move_window(self, win: WindowInfo, x: float, y: float) -> bool:
+        """Set the window's top-left corner. False if it cannot be moved."""
+        ...
+
+    def screen_size(self) -> tuple[int, int]:
+        """Main display size in points."""
+        ...

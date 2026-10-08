@@ -113,12 +113,13 @@ class VisualActionsApp(rumps.App):
 
     def show_permissions(self, _item) -> None:
         s = self.services.permissions.check(prompt=True)
-        rumps.alert(
+        if rumps.alert(
             "Permissions",
             f"Camera: {s.camera.value}\nAccessibility: {s.accessibility.value}\n\n{s.settings_hint}",
             ok="Open Camera settings",
             cancel="Close",
-        ) and self.services.permissions.open_settings("camera")
+        ):
+            self.services.permissions.open_settings("camera")
 
     def quit(self, _item) -> None:
         self.stop()
