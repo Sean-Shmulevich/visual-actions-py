@@ -10,6 +10,7 @@ from ..core.dispatcher import Dispatcher
 from ..core.drag import DragEvent
 from ..core.events import ActionFired, Bus, HandLost, HandSeen, ModeChanged, Tick, TokenEmitted
 from ..core.pipeline import Pipeline
+from ..core.presence import PresenceFilter
 from ..core.recorder import read_session
 from ..core.types import HandFrame
 from ..platform.mock.automation import MockAutomation
@@ -33,7 +34,12 @@ def replay_full(
     verbose: bool = False,
     tail_s: float = 1.0,
     automation: MockAutomation | None = None,
+    presence: PresenceFilter | None = None,
 ) -> ReplayResult:
+    """With `presence`, every recorded frame is re-filtered through it (a recording holds the
+    frames that passed presence at the time, plus its lost markers): a fast exit the filter
+    now predicts becomes a HandLost before the recorded marker, and the marker is skipped
+    if the filter already declared the hand lost."""
     cfg = config or default_config()
     bus = Bus()
     automation = automation or MockAutomation()
@@ -73,9 +79,21 @@ def replay_full(
     for r in records:
         if isinstance(r, HandFrame):
             advance(r.t_ns)
-            bus.publish(HandSeen(r))
+            if presence is None:
+                bus.publish(HandSeen(r))
+                continue
+            pr = presence.update(r)
+            if pr.seen is not None:
+                bus.publish(HandSeen(pr.seen))
+            elif pr.lost is not None:
+                bus.publish(HandLost(r.t_ns, *pr.lost))
         else:
             advance(r)
-            bus.publish(HandLost(r))
+            if presence is None:
+                bus.publish(HandLost(r))
+            else:
+                pr = presence.declare_lost("recorded", "lost marker in the recording")
+                if pr.lost is not None:
+                    bus.publish(HandLost(r, *pr.lost))
     advance(end_t)
     return result
