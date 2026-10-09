@@ -22,8 +22,10 @@ def test_default_bindings():
     a = b.lookup("window", "h_left")
     assert a is not None and a.kind is ActionKind.KEY and a.arg("chord") == "cmd+tab"
     assert b.lookup("window", "h_right").name == "Cmd+Shift+Tab"
-    assert b.lookup("window", "point_up").arg("chord") == "cmd+shift+["
-    assert parse_chord(b.lookup("window", "two_up").arg("chord")).key == "]"
+    assert b.lookup("window", "point_up") is None  # a slide shape never fires on sight
+    assert b.lookup("window", "point_up:left").arg("chord") == "ctrl+left"
+    assert parse_chord(b.lookup("window", "point_up:right").arg("chord")).key == "right"
+    assert b.lookup("window", "two_up") is None  # the peace sign is the media leader, nothing in the window menu
     assert b.lookup("window", "fist") is None  # fist is the escape, never bound by default
 
 
@@ -44,7 +46,7 @@ def test_saved_config_keeps_new_default_bindings(tmp_path: Path):
     )
     b = load_config(p).bindings()
     assert b.lookup("window", "h_left").name == "Custom"  # user override wins
-    assert b.lookup("window", "two_up").arg("repeat") == "True"
+    assert b.lookup("window", "point_up:left").name == "Desktop left"  # a default the file did not mention is kept
 
 
 def test_missing_config_gives_defaults(tmp_path: Path):

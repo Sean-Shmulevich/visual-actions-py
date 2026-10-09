@@ -89,8 +89,9 @@ def test_non_repeatable_action_returns_to_the_menu():
     assert len(fired) == 1
 
 
-def test_default_bindings_mark_only_the_tab_actions_repeatable():
-    b = default_config().bindings()
-    assert b.lookup("window", "point_up").arg("repeat") == "True"
-    assert b.lookup("window", "two_up").arg("repeat") == "True"
-    assert b.lookup("window", "h_left").arg("repeat") is None
+def test_no_default_binding_is_repeatable():
+    """The tab actions that used slide-to-repeat are gone (2026-10-09); desktop switching is a
+    direction slide instead. The repeat mechanism stays for bindings that opt in with repeat=true."""
+    cfg = default_config()
+    for ns in cfg.namespaces.values():
+        assert all(not b["action"].get("repeat") for b in ns.bindings)

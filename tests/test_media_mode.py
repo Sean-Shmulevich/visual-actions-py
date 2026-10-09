@@ -259,22 +259,22 @@ def test_short_peace_then_palm_switches_to_window():
     assert not fired and eng.state == HOLDING and eng.namespace == "window"
 
 
-def test_peace_held_after_next_tab_does_not_open_media():
-    """two_up is "Next tab" in window mode; keeping the shape up afterwards is not a new leader."""
+def test_peace_held_in_the_window_menu_does_not_open_media():
+    """two_up is unbound in window mode; holding it there is not a media leader, and keeping the
+    shape up after the menu times out is still not one until the hand changes shape."""
     eng, fired, _ = make()
     hold(eng, OPEN_PALM, 0.0, 1.25)
     eng.on_tick(int(1.3 * S))
-    eng.on_token(tok(TWO_UP, 1.5))
-    assert fired == ["Next tab"] and eng.state == REPEAT
-    hold(eng, TWO_UP, 1.75, 3.0)
-    eng.on_tick(int(3.05 * S))  # slide window over: back in the window menu until 8.05
-    assert eng.state == ARMED
-    hold(eng, TWO_UP, 3.25, 8.5)  # shape still held the whole time: never a second Next tab
-    eng.on_tick(int(8.55 * S))
-    assert eng.state == IDLE and fired == ["Next tab"]
-    eng.on_token(tok("none", 8.75))  # hand changes shape: a peace hold may start again
-    hold(eng, TWO_UP, 9.0, 10.25)
-    eng.on_tick(int(10.3 * S))
+    assert eng.state == ARMED and eng.namespace == "window"
+    hold(eng, TWO_UP, 1.5, 6.5)  # held the whole window: unbound here, never a media hold
+    eng.on_tick(int(6.55 * S))
+    assert eng.state == IDLE and fired == []
+    hold(eng, TWO_UP, 6.75, 8.0)  # same shape still up after the timeout: blocked
+    eng.on_tick(int(8.05 * S))
+    assert eng.state == IDLE
+    eng.on_token(tok("none", 8.25))  # hand changes shape: a peace hold may start again
+    hold(eng, TWO_UP, 8.5, 9.75)
+    eng.on_tick(int(9.8 * S))
     assert eng.state == ARMED and eng.namespace == "media"
 
 
