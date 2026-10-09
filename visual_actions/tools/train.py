@@ -14,17 +14,46 @@ from pathlib import Path
 
 import numpy as np
 
+import sys
+
 from ..core.normalize import features, to_user_frame
+from ..core.recognizer import (
+    FIST,
+    H_LEFT,
+    H_RIGHT,
+    MIDDLE_UP,
+    NONE,
+    OPEN_PALM,
+    POINT_UP,
+    THUMBS_DOWN,
+    THUMBS_UP,
+    TWO_UP,
+)
 from ..core.recorder import read_session
 from ..core.types import HandFrame
 from ..paths import datasets_dir, models_dir
 
-EXCLUDE = {"no_pinch", "three_up", "blade"}  # swipe shapes live on the swipe-desktops branch  # derived from the other classes by import_public; not a gesture
+# The classes a dataset directory may hold. Anything else under datasets/ is ignored with a
+# warning: scratch takes (an `_ideas/` folder once trained as a class and broke h_right),
+# shapes of pruned features (three_up), derived files (no_pinch). "pinch" is not a token
+# the recognizer emits; the model learns it so the pinch detector's shape is not read as fist.
+CLASSES: frozenset[str] = frozenset(
+    {NONE, OPEN_PALM, FIST, H_LEFT, H_RIGHT, POINT_UP, TWO_UP, MIDDLE_UP, THUMBS_UP, THUMBS_DOWN, "pinch"}
+)
 
 
-def load(datasets: Path, mirror: bool = True, exclude: set[str] = EXCLUDE) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+def class_dirs(datasets: Path, classes: frozenset[str] = CLASSES) -> list[Path]:
+    """The class directories under `datasets`, sorted; unknown directories are named on stderr and skipped."""
+    dirs = sorted(p for p in datasets.iterdir() if p.is_dir())
+    ignored = [p.name for p in dirs if p.name not in classes]
+    if ignored:
+        print(f"ignoring non-class directories under {datasets}: {', '.join(ignored)}", file=sys.stderr)
+    return [p for p in dirs if p.name in classes]
+
+
+def load(datasets: Path, mirror: bool = True, classes: frozenset[str] = CLASSES) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     xs, ys, groups = [], [], []
-    for label_dir in sorted(p for p in datasets.iterdir() if p.is_dir() and p.name not in exclude):
+    for label_dir in class_dirs(datasets, classes):
         for i, f in enumerate(sorted(label_dir.glob("*.jsonl"))):
             for r in read_session(f):
                 if isinstance(r, HandFrame):
@@ -33,6 +62,8 @@ def load(datasets: Path, mirror: bool = True, exclude: set[str] = EXCLUDE) -> tu
                     groups.append(f"{label_dir.name}/{f.name}")
     # flat layout fallback: datasets/<label>.jsonl
     for f in sorted(datasets.glob("*.jsonl")):
+        if f.stem not in classes:
+            continue
         for r in read_session(f):
             if isinstance(r, HandFrame):
                 xs.append(features(to_user_frame(r, mirror)))

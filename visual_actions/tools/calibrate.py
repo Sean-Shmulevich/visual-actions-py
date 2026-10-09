@@ -23,12 +23,13 @@ from ..core.pinch import pinch_distance
 from ..core.recorder import read_session
 from ..core.types import WRIST, HandFrame
 from ..paths import config_path, datasets_dir
+from .train import class_dirs
 
 
 def frames(datasets: Path, classes: set[str] | None = None, mirror: bool = True, user_only: bool = True) -> dict[str, list[HandFrame]]:
     """User recordings only by default: public datasets have other people's hands, framing and distance."""
     out: dict[str, list[HandFrame]] = {}
-    for d in sorted(p for p in datasets.iterdir() if p.is_dir()):
+    for d in class_dirs(datasets):
         if classes and d.name not in classes:
             continue
         for f in d.glob("*.jsonl"):

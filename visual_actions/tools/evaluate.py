@@ -20,6 +20,7 @@ from ..core.recorder import read_session
 from ..core.types import HandFrame
 from ..paths import datasets_dir, sessions_dir
 from .replay import replay_full
+from .train import class_dirs
 
 
 @dataclass
@@ -64,7 +65,7 @@ def leader_stats(path: Path, cfg: Config) -> LeaderStats:
 def run_leader(cfg: Config, datasets: Path, sessions: Path, include_public: bool) -> dict[str, LeaderStats]:
     out: dict[str, LeaderStats] = {}
     if datasets.exists():
-        for cls_dir in sorted(p for p in datasets.iterdir() if p.is_dir()):
+        for cls_dir in class_dirs(datasets):
             for f in sorted(cls_dir.glob("*.jsonl")):
                 if not include_public and f.name.startswith(("public-", "synth")):
                     continue
