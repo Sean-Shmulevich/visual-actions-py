@@ -159,6 +159,7 @@ class ModeEngine:
         self._refresh_on_return = False  # ARMED kept across a loss: the returning hand's leader shape renews the deadline
         self._slide_shape: str | None = None  # ARMED: the slide shape being tracked, and where its wrist was anchored
         self._slide_anchor = (0.5, 0.5)
+        self._slide_gap = 0  # other tokens seen since the slide shape; SLIDE_GAP_TOKENS of them drop the anchor
 
     def projected_hold_ns(self, t_ns: int) -> float:
         """Evidence extrapolated to t_ns at the last token's rate, so arming and the ring are smooth."""
@@ -254,7 +255,11 @@ class ModeEngine:
                 else:
                     self._fired_gap += 1
             ns = self.namespace or self.default_namespace
-            self._slide_shape = None
+            if self._slide_shape is not None:
+                # a flicker (none, the model's other guess) between two slide tokens keeps the anchor
+                self._slide_gap += 1
+                if self._slide_gap >= self.SLIDE_GAP_TOKENS:
+                    self._slide_shape = None
             action = self.bindings.lookup(ns, tok.name)
             if action is None or tok.confidence < self.min_token_confidence:
                 return
@@ -330,6 +335,8 @@ class ModeEngine:
                 self._after_command(ev.t_ns, None)  # dropped: grab another window, or anything else
 
     DIRECTIONS = ("left", "right", "up", "down")
+    SLIDE_GAP_TOKENS = 3  # tokens of another shape that end a slide (the shape flickers while the hand moves)
+    SLIDE_JUMP = 3.0  # a single-token travel over this many steps is the hand arriving, not a slide
 
     def slide_actions(self, ns: str, shape: str) -> dict[str, Action] | None:
         """direction -> action when `shape` is bound as a slide in `ns` ("<shape>:left" etc.), else None."""
@@ -345,8 +352,12 @@ class ModeEngine:
             return False
         if tok.confidence < self.min_token_confidence:
             return True
+        self._slide_gap = 0
         if self._slide_shape != tok.name:
-            self._slide_shape, self._slide_anchor = tok.name, (tok.x, tok.y)
+            # the shape is anchored only once it is still: a finger raised fast into position is
+            # not a slide (2026-10-09: point-up switched desktops when the hand arrived quickly)
+            if tok.still:
+                self._slide_shape, self._slide_anchor = tok.name, (tok.x, tok.y)
             return True
         dx, dy = tok.x - self._slide_anchor[0], tok.y - self._slide_anchor[1]  # user frame: +x right, +y down
         step = self.timing.repeat_slide
@@ -356,7 +367,9 @@ class ModeEngine:
                 break
             except ValueError:
                 pass
-        if max(abs(dx), abs(dy)) >= step:
+        if max(abs(dx), abs(dy)) >= self.SLIDE_JUMP * step:
+            self._slide_anchor = (tok.x, tok.y)  # a jump: re-anchor, never fire
+        elif max(abs(dx), abs(dy)) >= step:
             direction = ("right" if dx > 0 else "left") if abs(dx) >= abs(dy) else ("down" if dy > 0 else "up")
             self._slide_anchor = (tok.x, tok.y)
             action = slide.get(direction)

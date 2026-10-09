@@ -41,8 +41,12 @@ def test_edge_on_hand_never_arms_the_menu_and_scrolls_once_armed():
         bus.publish(Tick(int(t * S)))
         t += 1 / 30
     assert pipe.engine.state == ARMED
+    for _ in range(15):  # the scroll hand arrives and holds still: that is where the slide anchors
+        bus.publish(HandSeen(hand_frame("palm_side", int(t * S), center=(0.5, 0.5))))
+        bus.publish(Tick(int(t * S)))
+        t += 1 / 30
     y = 0.5
-    for k in range(60):  # the scroll hand rising 0.3 of the frame over two seconds
+    for k in range(60):  # then rises 0.3 of the frame over two seconds
         y = 0.5 - 0.3 * k / 59
         bus.publish(HandSeen(hand_frame("palm_side", int(t * S), center=(0.5, y))))
         bus.publish(Tick(int(t * S)))

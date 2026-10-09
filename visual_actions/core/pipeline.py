@@ -136,7 +136,7 @@ class Pipeline:
             self.bus.publish(PointerMoved(hf.t_ns, cx, cy, self.engine.state == DRAGGING))
         name, conf = self.recognizer.classify(hf)
         rule_name, rule_conf = self._palm_rule.classify(hf)
-        if rule_name == PALM_SIDE and rule_conf >= 0.5:
+        if rule_name == PALM_SIDE and rule_conf >= 0.3:
             name, conf = PALM_SIDE, rule_conf  # the model has no class for the edge-on scroll hand: the rule decides
         elif name == OPEN_PALM and self.config.recognizer.palm_strict and rule_name != OPEN_PALM:
             name, conf = NONE, 0.5  # the model says palm but the geometry does not: not a leader

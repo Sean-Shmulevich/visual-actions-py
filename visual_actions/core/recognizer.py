@@ -99,11 +99,9 @@ class RuleRecognizer:
         thumb_fold: float = 0.6,
         thumb_cos: float = 0.6,
         thumb_wrist_max_y: float = 0.92,
-        side_width: float = 0.30,
-        side_spread: float = 0.40,
+        side_max_wrist_y: float = 0.85,
     ) -> None:
-        self.side_width = side_width
-        self.side_spread = side_spread
+        self.side_max_wrist_y = side_max_wrist_y
         self.thumb_wrist_max_y = thumb_wrist_max_y
         self.thumb_clear = thumb_clear
         self.thumb_fold = thumb_fold
@@ -123,17 +121,20 @@ class RuleRecognizer:
         all_ext = all(e >= self.extended for e in ext)
         all_curl = all(e <= self.curled for e in ext)
         if all_ext:
-            # Edge-on hand, fingers together, pointing sideways (arm roughly horizontal): a frontal
-            # palm measures ~0.48 wide at the knuckles and ~0.60 at the tips (2026-10-08 sessions);
-            # turned on its side it foreshortens to well under half that. Checked before the open
-            # palm so the scroll hand can never arm the menu.
-            width = float(np.linalg.norm(c.pts[INDEX_MCP][:2] - c.pts[PINKY_MCP][:2]))
-            spread = float(np.linalg.norm(c.pts[INDEX_TIP][:2] - c.pts[PINKY_TIP][:2]))
+            # The scroll hand: all four fingers extended and pointing sideways (arm level). The
+            # leader palm points up (2026-10-09 session: |cos| 0.03 over a whole hold) while the
+            # flat sideways hand reads 0.95..1.0 whatever its tilt; knuckle width and tip spread
+            # swing between 0.1 and 0.45 as the palm tilts, so they are not used. Checked before
+            # the open palm so the scroll hand can never arm the menu, and the face veto (open
+            # palm only) never fires on it.
+            # The arm is raised (wrist in the top 85 % of the frame): hands resting flat on the desk
+            # also point sideways but sit at the bottom edge (p50 wrist y 0.90..0.97 in the sessions
+            # versus 0.67 for the scroll hand).
             vi = c.pts[INDEX_TIP][:2] - c.pts[INDEX_MCP][:2]
             ni = float(np.linalg.norm(vi))
-            sideways = ni > 1e-6 and abs(vi[0]) / ni >= self.direction_cos
-            if width < self.side_width and spread < self.side_spread and sideways:
-                return PALM_SIDE, min(min(ext), max(0.0, min(1.0, (self.side_width - width) / (self.side_width / 2))))
+            sideways = abs(vi[0]) / ni if ni > 1e-6 else 0.0
+            if sideways >= self.direction_cos and hf.landmarks[WRIST].y <= self.side_max_wrist_y:
+                return PALM_SIDE, min(min(ext), (sideways - self.direction_cos) / (1.0 - self.direction_cos))
         if all_ext and thumb_idx >= self.thumb_out:
             return OPEN_PALM, min(ext)
         thumbs = self._thumbs(c) if hf.landmarks[WRIST].y <= self.thumb_wrist_max_y else None
