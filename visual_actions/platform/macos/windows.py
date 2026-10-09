@@ -10,7 +10,7 @@ import logging
 import os
 import time
 
-from ...core.automation import Rect, WindowInfo
+from ...core.automation import FocusResult, Rect, WindowInfo
 
 log = logging.getLogger(__name__)
 
@@ -241,17 +241,25 @@ class MacWindows:
 
     # -- focus ----------------------------------------------------------------
 
-    def focus_at(self, x: float, y: float) -> bool:
+    def focus_at(self, x: float, y: float) -> FocusResult:
         """Activate the app and window under (x, y) and focus the deepest element there that
-        accepts keyboard focus (a terminal pane, a web view, a text field). No mouse events."""
-        from AppKit import NSApplicationActivateIgnoringOtherApps, NSRunningApplication
+        accepts keyboard focus (a terminal pane, a web view, a text field). No mouse events.
+
+        Two activation routes, both always taken: NSRunningApplication.activate (which macOS 14+
+        may defer when the caller is a background process the user has not interacted with) and
+        the Accessibility frontmost attribute on the application element (the route AX-based
+        window managers use, not subject to that deferral). The detail string records the active
+        app before the request and every return value, for the session log."""
+        from AppKit import NSApplicationActivateIgnoringOtherApps, NSRunningApplication, NSWorkspace
         from ApplicationServices import (
             AXUIElementCopyElementAtPosition,
+            AXUIElementCreateApplication,
             AXUIElementCreateSystemWide,
             AXUIElementPerformAction,
             AXUIElementSetAttributeValue,
             kAXErrorSuccess,
             kAXFocusedAttribute,
+            kAXFrontmostAttribute,
             kAXMainAttribute,
             kAXRaiseAction,
         )
@@ -259,21 +267,28 @@ class MacWindows:
         t0 = time.perf_counter()
         win = self.window_at(x, y)
         if win is None:
-            return False
+            return FocusResult(False, "no window under the pointer")
+        before = NSWorkspace.sharedWorkspace().frontmostApplication()
+        before_s = f"{before.localizedName()}:{before.processIdentifier()}" if before is not None else "?"
         app = NSRunningApplication.runningApplicationWithProcessIdentifier_(win.pid)
-        if app is not None:
-            app.activateWithOptions_(NSApplicationActivateIgnoringOtherApps)
+        activated = app.activateWithOptions_(NSApplicationActivateIgnoringOtherApps) if app is not None else None
+        front_err = AXUIElementSetAttributeValue(AXUIElementCreateApplication(win.pid), kAXFrontmostAttribute, True)
         el = self._ax_element(win)
+        raise_err = main_err = None
         if el is not None:
-            AXUIElementPerformAction(el, kAXRaiseAction)
-            AXUIElementSetAttributeValue(el, kAXMainAttribute, True)
+            raise_err = AXUIElementPerformAction(el, kAXRaiseAction)
+            main_err = AXUIElementSetAttributeValue(el, kAXMainAttribute, True)
             AXUIElementSetAttributeValue(el, kAXFocusedAttribute, True)
         err, hit = AXUIElementCopyElementAtPosition(AXUIElementCreateSystemWide(), float(x), float(y), None)
         focused = False
         if err == kAXErrorSuccess and hit is not None:
             focused = focus_first_focusable(hit, _ax_parent, _ax_focus_settable, _ax_set_focused)
         self.last_focus_ms = (time.perf_counter() - t0) * 1000
-        return el is not None or focused
+        detail = (
+            f"{before_s} -> {win.app}:{win.pid} activate={activated} axfront={front_err} "
+            f"raise={raise_err} main={main_err} element={focused} {self.last_focus_ms:.0f}ms"
+        )
+        return FocusResult(el is not None or focused, detail)
 
     def forget(self, win: WindowInfo) -> None:
         self._ax_cache.pop(win.id, None)

@@ -24,6 +24,16 @@ class WindowRef:
 
 
 @dataclass(frozen=True)
+class FocusResult:
+    """What a focus request did. `detail` is for the session log: which app was active before,
+    which was asked for, and what each mechanism returned, so a focus that did not stick can be
+    diagnosed from a recording instead of guessed at."""
+
+    ok: bool
+    detail: str = ""
+
+
+@dataclass(frozen=True)
 class Rect:
     x: int
     y: int
@@ -69,7 +79,7 @@ class DesktopAutomation(Protocol):
         """Open a URL or file with the system's default handler."""
         ...
 
-    def focus_at(self, x: float, y: float) -> bool:
+    def focus_at(self, x: float, y: float) -> FocusResult:
         """Activate the app and window under the screen point and give keyboard focus to the
         element there (a terminal pane, a sidebar), without any mouse click."""
         ...

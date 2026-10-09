@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .automation import DesktopAutomation, Rect
+from .automation import DesktopAutomation, FocusResult, Rect
 from .bindings import Bindings
 from .config import Config
 from .dispatcher import Dispatcher
@@ -192,7 +192,7 @@ class AutomationMover:
     def move(self, handle, x: float, y: float) -> bool:
         return self.automation.move_window(handle, x, y)
 
-    def focus(self, handle, x: float, y: float) -> bool:
+    def focus(self, handle, x: float, y: float) -> FocusResult:
         return self.automation.focus_at(x, y)
 
     def set_frame(self, handle, rect: Rect) -> bool:

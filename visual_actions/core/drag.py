@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Protocol
 
-from .automation import Rect
+from .automation import FocusResult, Rect
 from .events import Bus, SnapPreview
 from .pinch import PinchEvent, PinchPhase
 from .pointer import SmoothedPointer
@@ -27,7 +27,7 @@ class WindowMover(Protocol):
 
     def set_frame(self, handle: Any, rect: Rect) -> bool: ...
 
-    def focus(self, handle: Any, x: float, y: float) -> bool:
+    def focus(self, handle: Any, x: float, y: float) -> FocusResult:
         """Make the window active and focus the element under (x, y). Never a click."""
         ...
 
@@ -51,6 +51,7 @@ class DragEvent:
     x: float  # pointer in screen points
     y: float
     snapped: str | None = None  # zone name when a release snapped the window
+    focus: str | None = None  # START: what the focus-on-grab request did (driver detail), None when disabled
 
 
 class DragController:
@@ -162,11 +163,13 @@ class DragController:
         self._pos = (float(frame.x), float(frame.y))
         self.suspended = False
         self.moves = 0
+        focus: str | None = None
         if self.focus_on_grab:
-            self.mover.focus(handle, sx, sy)  # the grabbed window becomes the active one
+            fr = self.mover.focus(handle, sx, sy)  # the grabbed window becomes the active one
+            focus = fr.detail or ("ok" if fr.ok else "failed")
         if self.snap is not None:
             self.snap.reset()
-        self.bus.publish(DragEvent(ev.t_ns, DragPhase.START, label, sx, sy))
+        self.bus.publish(DragEvent(ev.t_ns, DragPhase.START, label, sx, sy, focus=focus))
         return True
 
     def _move(self, t_ns: int, sx: float, sy: float) -> None:
@@ -237,9 +240,9 @@ class FakeWindows:
         self.moves: list[tuple[str, float, float]] = []
         self.focused: list[tuple[str, float, float]] = []
 
-    def focus(self, handle: dict[str, Any], x: float, y: float) -> bool:
+    def focus(self, handle: dict[str, Any], x: float, y: float) -> FocusResult:
         self.focused.append((handle["label"], x, y))
-        return True
+        return FocusResult(True, "fake")
 
     def grab(self, x: float, y: float) -> dict[str, Any] | None:
         for w in self.windows:

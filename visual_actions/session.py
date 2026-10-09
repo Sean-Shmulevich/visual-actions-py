@@ -126,6 +126,8 @@ class SessionRecorder:
         if ev.phase is DragPhase.MOVE:
             return
         extra = f" snapped={ev.snapped}" if ev.snapped else ""
+        if ev.focus is not None:
+            extra += f" focus[{ev.focus}]"
         self.log("drag", f"{ev.phase.value} {ev.window} @({ev.x:.0f},{ev.y:.0f}){extra}", ev.t_ns)
 
     def _on_hand_lost(self, ev: HandLost) -> None:

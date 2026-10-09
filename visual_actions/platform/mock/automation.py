@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ...core.automation import MediaVerb, NativeResult, Rect, WindowInfo, WindowRef
+from ...core.automation import FocusResult, MediaVerb, NativeResult, Rect, WindowInfo, WindowRef
 
 
 def default_windows() -> list[WindowInfo]:
@@ -65,9 +65,9 @@ class MockAutomation:
         self._rec("run_native", str(script_path), timeout_s)
         return NativeResult(ok=True, stdout="mock")
 
-    def focus_at(self, x: float, y: float) -> bool:
+    def focus_at(self, x: float, y: float) -> FocusResult:
         self._rec("focus_at", x, y)
-        return True
+        return FocusResult(True, "mock")
 
     def open(self, target: str) -> bool:
         self._rec("open", target)

@@ -11,7 +11,7 @@ import sys
 import time
 from pathlib import Path
 
-from ...core.automation import MediaVerb, NativeResult, Rect, WindowInfo, WindowRef
+from ...core.automation import FocusResult, MediaVerb, NativeResult, Rect, WindowInfo, WindowRef
 from ...core.chords import parse_chord
 from .windows import MacWindows
 
@@ -137,7 +137,7 @@ class MacAutomation:
             return NativeResult(ok=False, stderr=f"timed out after {timeout_s}s")
         return NativeResult(ok=p.returncode == 0, stdout=p.stdout.strip(), stderr=p.stderr.strip())
 
-    def focus_at(self, x: float, y: float) -> bool:
+    def focus_at(self, x: float, y: float) -> FocusResult:
         return self.windows.focus_at(x, y)
 
     def open(self, target: str) -> bool:

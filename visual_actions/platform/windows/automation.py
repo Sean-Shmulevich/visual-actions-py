@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from ...core.automation import MediaVerb, NativeResult, Rect, WindowInfo, WindowRef
+from ...core.automation import FocusResult, MediaVerb, NativeResult, Rect, WindowInfo, WindowRef
 
 log = logging.getLogger(__name__)
 
@@ -30,8 +30,8 @@ class WindowsAutomation:
         log.info("stub run_native %s", script_path)
         return NativeResult(ok=True, stdout="stub")
 
-    def focus_at(self, x: float, y: float) -> bool:
-        return False
+    def focus_at(self, x: float, y: float) -> FocusResult:
+        return FocusResult(False, "stub")
 
     def open(self, target: str) -> bool:
         log.info("stub open %s", target)
