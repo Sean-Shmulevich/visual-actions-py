@@ -113,6 +113,7 @@ class LeaderConfig:
     face_veto: bool = True
     face_overlap: float = 0.5  # hand box fraction inside a face box
     face_spread: float = 0.6  # index-tip to pinky-tip distance in hand units; below this the palm is vetoed
+    profile: str = "strict"  # leader preset (strict | fast); a saved file carries this and only the keys that differ from it
 
 
 @dataclass
@@ -278,10 +279,31 @@ def _drop_none(obj: Any) -> Any:
     return obj
 
 
+def _diff(cur: Any, ref: Any) -> Any:
+    """The part of `cur` that differs from `ref`; None when nothing does."""
+    if isinstance(cur, dict) and isinstance(ref, dict):
+        out: dict[str, Any] = {}
+        for k, v in cur.items():
+            if k not in ref:
+                if v is not None:
+                    out[k] = _drop_none(v)
+            else:
+                d = _diff(v, ref[k])
+                if d is not None:
+                    out[k] = d
+        return out or None
+    return None if cur == ref else _drop_none(cur)
+
+
 def save_config(cfg: Config, path: Path) -> None:
+    """Write the profile name and only the keys that differ from that profile's defaults.
+    A file that spelled out every value froze the defaults of the day it was written: the
+    2026-10-08 calibration pinned the fast timings, so the strict profile never ran live."""
     import tomli_w
 
-    data = _drop_none(asdict(cfg))
+    profile = cfg.leader.profile
+    data = _diff(asdict(cfg), asdict(default_config(profile))) or {}
+    data.setdefault("leader", {})["profile"] = profile
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("wb") as f:
         tomli_w.dump(data, f)
@@ -296,6 +318,7 @@ def apply_profile(cfg: Config, profile: str) -> Config:
     quick command; the model's palm must also pass the geometric palm rule.
     FAST: the earlier, looser behaviour (1.1 s, confidence speeds up, pauses, quick command)."""
     t, r = cfg.timing, cfg.recognizer
+    cfg.leader.profile = profile
     if profile == STRICT:
         t.leader_hold_s, t.confidence_gain, t.leader_min_confidence = 1.5, 1.0, 0.9
         t.hold_break_tokens, t.hold_reset_on_move, t.quick_command = 1, True, False

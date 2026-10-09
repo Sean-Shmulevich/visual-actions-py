@@ -1,7 +1,7 @@
 """The app default: a clear, still palm for 1.5 s straight."""
 
 from visual_actions.core.bindings import Bindings
-from visual_actions.core.config import STRICT, TimingConfig, _base_config, apply_profile, default_config
+from visual_actions.core.config import FAST, STRICT, TimingConfig, _base_config, apply_profile, default_config, load_config, save_config
 from visual_actions.core.modes import Timing
 from visual_actions.core.events import Bus
 from visual_actions.core.modes import ARMED, HOLDING, IDLE, ModeEngine
@@ -62,3 +62,30 @@ def test_quick_command_is_off():
 
 def test_timing_defaults_are_the_shipped_profile():
     assert Timing() == TimingConfig().to_timing() == default_config().timing.to_timing()
+
+
+def test_saved_config_keeps_only_the_profile_and_user_deltas(tmp_path):
+    cfg = default_config(STRICT)
+    cfg.drag.box_x0 = 0.2  # a calibrated value
+    p = tmp_path / "c.toml"
+    save_config(cfg, p)
+    text = p.read_text()
+    assert 'profile = "strict"' in text and "box_x0 = 0.2" in text
+    assert "leader_hold_s" not in text and "[timing]" not in text  # defaults are not frozen into the file
+    back = load_config(p)
+    assert back.timing.leader_hold_s == 1.5 and back.drag.box_x0 == 0.2 and back.leader.profile == STRICT
+
+
+def test_saved_fast_profile_loads_as_fast(tmp_path):
+    p = tmp_path / "c.toml"
+    save_config(default_config(FAST), p)
+    assert "[timing]" not in p.read_text()
+    back = load_config(p)
+    assert back.leader.profile == FAST and back.timing.leader_hold_s == 1.1 and back.timing.quick_command is True
+
+
+def test_explicit_timing_key_still_overrides_the_profile(tmp_path):
+    p = tmp_path / "c.toml"
+    p.write_text('[leader]\nprofile = "strict"\n[timing]\nleader_hold_s = 2.0\n')
+    cfg = load_config(p)
+    assert cfg.timing.leader_hold_s == 2.0 and cfg.timing.quick_command is False
