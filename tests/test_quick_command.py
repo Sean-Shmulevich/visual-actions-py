@@ -10,7 +10,7 @@ from visual_actions.core.types import Action, ActionKind, Binding, Hand, Token
 
 S = 1_000_000_000
 CMD_TAB = Action(ActionKind.KEY, "Cmd+Tab", (("chord", "cmd+tab"),))
-TIMING = Timing(leader_hold_ns=int(1.1 * S), confidence_gain=1.0, quick_command_min_hold_ns=int(0.3 * S), quick_command_min_confidence=0.85)
+TIMING = Timing(leader_hold_ns=int(1.1 * S), confidence_gain=1.0, quick_command=True, hold_break_tokens=2, quick_command_min_hold_ns=int(0.3 * S), quick_command_min_confidence=0.85)  # the FAST profile's hold
 
 
 def make(with_drag=False):

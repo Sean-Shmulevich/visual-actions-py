@@ -1,7 +1,8 @@
 """The app default: a clear, still palm for 1.5 s straight."""
 
 from visual_actions.core.bindings import Bindings
-from visual_actions.core.config import STRICT, _base_config, apply_profile
+from visual_actions.core.config import STRICT, TimingConfig, _base_config, apply_profile, default_config
+from visual_actions.core.modes import Timing
 from visual_actions.core.events import Bus
 from visual_actions.core.modes import ARMED, HOLDING, IDLE, ModeEngine
 from visual_actions.core.types import Hand, Token
@@ -57,3 +58,7 @@ def test_quick_command_is_off():
     palms(eng, 0, 0.5)
     eng.on_token(Token(int(0.75 * S), "h_left", 0.99, Hand.RIGHT, True))
     assert eng.state == IDLE
+
+
+def test_timing_defaults_are_the_shipped_profile():
+    assert Timing() == TimingConfig().to_timing() == default_config().timing.to_timing()

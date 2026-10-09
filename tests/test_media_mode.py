@@ -49,7 +49,7 @@ from visual_actions.platform.mock.automation import MockAutomation
 from visual_actions.tools.synth import hand_frame
 
 S = 1_000_000_000
-TIMING = Timing(leader_hold_ns=int(1.1 * S), confidence_gain=1.0, quick_command_min_hold_ns=int(0.3 * S))
+TIMING = Timing(leader_hold_ns=int(1.1 * S), confidence_gain=1.0, quick_command=True, quick_command_min_hold_ns=int(0.3 * S))  # FAST-style: quick command on
 
 
 def make(with_drag=False):

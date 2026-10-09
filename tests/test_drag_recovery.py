@@ -99,7 +99,7 @@ def test_pipeline_gap_in_the_middle_of_a_drag_resumes(tmp_path: Path):
     p = tmp_path / "gap.jsonl"
     rec = Recorder(p)
     t = 0.0
-    for _ in range(45):  # palm 1.5 s
+    for _ in range(75):  # palm 2.5 s: past the 1.5 s hold plus the token window
         rec.write(hand_frame("open_palm", int(t * 1e9), center=(0.5, 0.5)))
         t += 1 / 30
     for hf in drag_frames(t, [(0.5, 0.5), (0.6, 0.5)], 0.6):  # drag right 0.1

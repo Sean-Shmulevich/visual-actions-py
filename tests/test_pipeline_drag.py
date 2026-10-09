@@ -29,7 +29,7 @@ def big_window_mock():
 @pytest.fixture
 def session(tmp_path):
     p = tmp_path / "drag.jsonl"
-    write_drag_session(p, palm_seconds=1.5, drag_path=[(0.5, 0.5), (0.7, 0.6)], drag_seconds=1.0)
+    write_drag_session(p, drag_path=[(0.5, 0.5), (0.7, 0.6)], drag_seconds=1.0)
     return p
 
 
@@ -80,7 +80,7 @@ def test_pinch_over_no_window_is_a_miss(session):
 def test_drag_to_right_edge_snaps_window_to_right_half(tmp_path):
     p = tmp_path / "snap.jsonl"
     # palm at the centre, then a pinch-drag that ends hard against the right edge and stays there
-    write_drag_session(p, palm_seconds=1.5, drag_path=[(0.5, 0.5), (1.1, 0.5), (1.1, 0.5)], drag_seconds=1.2)
+    write_drag_session(p, drag_path=[(0.5, 0.5), (1.1, 0.5), (1.1, 0.5)], drag_seconds=1.2)
     mock = MockAutomation(windows=[WindowInfo(1, 1, "App", "Win", Rect(400, 100, 500, 500))], screen=(1440, 900))
     r = replay_full(p, cfg_full_box(), automation=mock)
     assert r.drags[-1].phase is DragPhase.END and r.drags[-1].snapped == "right"
@@ -90,7 +90,7 @@ def test_drag_to_right_edge_snaps_window_to_right_half(tmp_path):
 
 def test_snapping_can_be_disabled(tmp_path):
     p = tmp_path / "snap.jsonl"
-    write_drag_session(p, palm_seconds=1.5, drag_path=[(0.5, 0.5), (1.1, 0.5), (1.1, 0.5)], drag_seconds=1.2)
+    write_drag_session(p, drag_path=[(0.5, 0.5), (1.1, 0.5), (1.1, 0.5)], drag_seconds=1.2)
     cfg = cfg_full_box()
     cfg.drag.snap_enabled = False
     mock = MockAutomation(windows=[WindowInfo(1, 1, "App", "Win", Rect(400, 100, 500, 500))], screen=(1440, 900))

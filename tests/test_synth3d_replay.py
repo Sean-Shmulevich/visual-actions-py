@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from visual_actions.core.automation import Rect, WindowInfo
-from visual_actions.core.config import default_config
+from visual_actions.core.config import FAST, default_config
 from visual_actions.core.drag import DragPhase
 from visual_actions.platform.mock.automation import MockAutomation
 from visual_actions.tools.replay import replay_full
@@ -14,7 +14,8 @@ FIX = Path(__file__).parent / "fixtures" / "synth3d"
 
 
 def cfg():
-    c = default_config()
+    # the committed sequences sample a 1.5-1.8 s palm (synth3d.generate_sequence), a FAST-length hold
+    c = default_config(FAST)
     d = c.drag
     d.box_x0, d.box_x1, d.box_y0, d.box_y1 = 0.0, 1.0, 0.0, 1.0
     return c

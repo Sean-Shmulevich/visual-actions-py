@@ -7,7 +7,8 @@ from visual_actions.core.types import Action, ActionKind, Binding, Hand, Token
 
 S = 1_000_000_000
 CMD_TAB = Action(ActionKind.KEY, "Cmd+Tab", (("chord", "cmd+tab"),))
-TIMING = Timing(leader_hold_ns=2 * S, command_timeout_ns=5 * S, escape_fist_ns=1 * S, escape_lost_ns=int(1.5 * S), confidence_gain=1.0, leader_min_confidence=0.8)
+# FAST-style hold: a flicker or movement pauses the count instead of resetting it (the STRICT rules have tests/test_strict_profile.py)
+TIMING = Timing(leader_hold_ns=2 * S, command_timeout_ns=5 * S, escape_fist_ns=1 * S, escape_lost_ns=int(1.5 * S), confidence_gain=1.0, leader_min_confidence=0.8, hold_break_tokens=2, hold_reset_on_move=False)
 
 
 def make(timing: Timing = TIMING, **kw):

@@ -67,28 +67,29 @@ PINCH_RIGHT, PINCH_LEFT = "pinch_right", "pinch_left"  # binding names for sidew
 
 @dataclass(frozen=True)
 class Timing:
-    leader_hold_ns: int = 2_000_000_000
+    # Defaults mirror TimingConfig (the STRICT profile); tests/test_strict_profile.py pins the two equal.
+    leader_hold_ns: int = 1_500_000_000
     command_timeout_ns: int = 5_000_000_000
     escape_fist_ns: int = 1_000_000_000
     escape_lost_ns: int = 1_500_000_000
-    confidence_gain: float = 1.5  # fill rate at confidence 1.0, relative to wall clock
+    confidence_gain: float = 1.0  # fill rate at confidence 1.0, relative to wall clock; FAST uses 1.5
     drag_lost_grace_ns: int = 2_500_000_000  # hand lost mid-drag: wait this long for it to come back
     repeat_window_ns: int = 1_500_000_000  # slide-to-repeat window after a repeatable action
-    hold_break_tokens: int = 2  # consecutive non-palm tokens tolerated during a hold (1 = none); the STRICT profile sets 1
-    hold_reset_on_move: bool = False  # moving palm resets evidence (else pauses); STRICT sets True
-    quick_command: bool = True  # STRICT sets False
+    hold_break_tokens: int = 1  # consecutive non-palm tokens tolerated during a hold (1 = none); FAST sets 2
+    hold_reset_on_move: bool = True  # moving palm resets evidence (else pauses); FAST sets False
+    quick_command: bool = False  # FAST sets True
     quick_command_min_hold_ns: int = 300_000_000  # a clear palm this long, then a confident bound gesture, arms + fires at once
     quick_command_min_confidence: float = 0.85
     resume_grace_ns: int = 600_000_000  # hand back mid-suspension: wait this long for the pinch before dropping
     repeat_slide: float = 0.10  # sideways wrist travel (fraction of frame width) that counts as a slide
-    leader_min_confidence: float = 0.8  # palm tokens below this neither start nor fill the hold
+    leader_min_confidence: float = 0.9  # palm tokens below this neither start nor fill the hold; FAST 0.8
     adjust_step: float = 0.05  # ADJUST: sideways pinch travel (fraction of frame width) per pinch_right / pinch_left
     adjust_settle_ns: int = 250_000_000  # ADJUST: the pinch must hold still this long before travel counts (shape changes pinch briefly)
     adjust_settle_travel: float = 0.04  # ADJUST: pinch-point drift (frame fraction) that restarts the settle
     chain_commands: bool = True  # stay ARMED after a command (timeout restarts) so commands chain without the leader
     leader_release_tokens: int = 3  # ARMED: other tokens in a row before the leader shape may fire (a moving peace misreads for 2)
     keep_armed_on_lost: bool = True  # ARMED/REPEAT survive a hand loss until their own deadline (see on_tick); off: escape_lost drops them
-    hold_lost_grace_ns: int = 300_000_000  # HOLDING: a loss shorter than this pauses the hold instead of resetting it; 0 = reset at once (STRICT)
+    hold_lost_grace_ns: int = 0  # HOLDING: a loss shorter than this pauses the hold instead of resetting it; 0 = reset at once; FAST 0.3 s
 
 
 def hold_rate(confidence: float, gain: float) -> float:

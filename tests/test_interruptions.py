@@ -240,7 +240,7 @@ def test_fast_hold_drops_after_the_grace():
 
 def test_replay_armed_window_survives_two_seconds_without_a_hand(tmp_path: Path):
     p = tmp_path / "armed_gap.jsonl"
-    write_session(p, [("open_palm", 1.5), ("h_left", 1.0), ("lost", 2.0), ("h_right", 0.6), ("lost", 0.5)])
+    write_session(p, [("open_palm", 2.5), ("h_left", 1.0), ("lost", 2.0), ("h_right", 0.6), ("lost", 0.5)])
     r = replay_full(p, default_config())
     assert [f.action.name for f in r.fired] == ["Cmd+Tab", "Cmd+Shift+Tab"]
     assert "idle" not in [m.new for m in r.modes]  # armed throughout the 2 s gap
@@ -253,7 +253,7 @@ def test_replay_blip_mid_drag_resumes_on_the_first_frame_back(tmp_path: Path):
     def session(path: Path, gap: float):
         rec = Recorder(path)
         t = 0.0
-        for _ in range(45):
+        for _ in range(75):  # palm 2.5 s
             rec.write(hand_frame("open_palm", int(t * S), center=(0.5, 0.5)))
             t += 1 / 30
         for hf in drag_frames(t, [(0.5, 0.5), (0.6, 0.5)], 0.5):

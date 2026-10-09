@@ -122,7 +122,7 @@ def drag_frames(
 
 def write_drag_session(
     path: Path,
-    palm_seconds: float = 1.5,
+    palm_seconds: float = 2.5,  # the shipped hold is 1.5 s still palm after the 250 ms token window
     drag_path: list[tuple[float, float]] | None = None,
     drag_seconds: float = 1.0,
     palm_center: tuple[float, float] = (0.5, 0.5),
