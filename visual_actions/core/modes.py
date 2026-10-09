@@ -84,7 +84,7 @@ PINCH_RIGHT, PINCH_LEFT = "pinch_right", "pinch_left"  # binding names for sidew
 @dataclass(frozen=True)
 class Timing:
     # Defaults mirror TimingConfig (the STRICT profile); tests/test_strict_profile.py pins the two equal.
-    leader_hold_ns: int = 1_500_000_000
+    leader_hold_ns: int = 750_000_000
     command_timeout_ns: int = 5_000_000_000
     escape_fist_ns: int = 1_000_000_000
     escape_lost_ns: int = 1_500_000_000

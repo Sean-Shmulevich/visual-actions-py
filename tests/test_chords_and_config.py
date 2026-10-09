@@ -51,4 +51,4 @@ def test_saved_config_keeps_new_default_bindings(tmp_path: Path):
 
 
 def test_missing_config_gives_defaults(tmp_path: Path):
-    assert load_config(tmp_path / "nope.toml").timing.leader_hold_s == 1.5  # the shipped STRICT hold
+    assert load_config(tmp_path / "nope.toml").timing.leader_hold_s == 0.75  # the shipped STRICT hold

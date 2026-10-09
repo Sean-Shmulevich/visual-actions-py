@@ -67,7 +67,7 @@ def test_edits_round_trip_into_a_config():
 def test_invalid_number_is_rejected_and_the_last_value_kept():
     m = SettingsModel(default_config())
     assert "number" in (m.set_text("timing.leader_hold_s", "fast") or "")
-    assert m.value("timing.leader_hold_s") == 1.5
+    assert m.value("timing.leader_hold_s") == 0.75
     assert "timing.leader_hold_s" in m.errors
     assert "whole" in (m.set_text("timing.popup_ms", "1.5") or "")
     assert m.value("timing.popup_ms") == 900
@@ -93,7 +93,7 @@ def test_cross_field_checks():
 def test_profile_switch_refills_the_timing_fields():
     m = SettingsModel(default_config())
     assert m.profile == STRICT
-    assert m.value("timing.leader_hold_s") == 1.5 and m.value("timing.quick_command") is False
+    assert m.value("timing.leader_hold_s") == 0.75 and m.value("timing.quick_command") is False
     m.set_text("drag.gain", "2.0")  # an unrelated edit survives the switch
     changed = m.set_profile(FAST)
     assert m.profile == FAST
@@ -106,7 +106,7 @@ def test_profile_switch_refills_the_timing_fields():
     assert "timing.leader_hold_s" in changed and "leader.profile" in changed
     assert set(m.diff()) == {"drag.gain"}  # against the FAST defaults only the edit differs
     m.set_profile(STRICT)
-    assert m.value("timing.leader_hold_s") == 1.5 and m.value("recognizer.palm_strict") is True
+    assert m.value("timing.leader_hold_s") == 0.75 and m.value("recognizer.palm_strict") is True
 
 
 def test_reset_to_profile_defaults_keeps_the_profile():

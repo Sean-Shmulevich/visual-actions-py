@@ -40,7 +40,7 @@ FIRE_LEFT = [("open_palm", 2.5), ("h_left", 0.8), ("lost", 0.5)]
 FIRE_RIGHT = [("open_palm", 2.5), ("h_right", 0.8), ("lost", 0.5)]
 FIRE_THEN_FIST = [("open_palm", 2.5), ("h_left", 0.8), ("fist", 1.5), ("lost", 0.5)]
 FIST_ONLY = [("fist", 3.0), ("lost", 0.5)]
-PALM_BROKEN = [("open_palm", 0.8), ("none", 0.5), ("lost", 0.5)]
+PALM_BROKEN = [("open_palm", 0.5), ("none", 0.5), ("lost", 0.5)]
 
 
 @pytest.fixture

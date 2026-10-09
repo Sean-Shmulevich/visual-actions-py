@@ -4,7 +4,7 @@ Hand-gesture control for the desktop with Vim's grammar: hold a root gesture to 
 namespace, make one command gesture, done. macOS first; Windows and Linux behind the
 same interfaces.
 
-| Root gesture (hold ~1 s) | Mode | Commands |
+| Root gesture (hold 0.75 s) | Mode | Commands |
 |---|---|---|
 | Open palm | window | flat hand, fingers together pointing left, raised and held still: starts a stick scroll (a sticky dot marks the spot; raise or lower the hand to scroll, farther = faster) · H left / right: previous / next tab (slide to repeat) · one finger up, then flick it left / right and back: previous / next desktop (out-and-back is one switch) · pinch: drag the window under your hand |
 | Peace sign | media | point up: play/pause · H left / right: next / previous track · pinch, hold still a moment, then move toward your right / left: volume up / down, one step per ~5 % of frame width; the popup shows the live system volume; release to finish |

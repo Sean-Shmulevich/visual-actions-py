@@ -12,7 +12,8 @@ S = 1_000_000_000
 
 def engine():
     cfg = apply_profile(_base_config(), STRICT)
-    assert cfg.timing.leader_hold_s == 1.5 and not cfg.timing.quick_command and cfg.recognizer.palm_strict
+    assert cfg.timing.leader_hold_s == 0.75 and not cfg.timing.quick_command and cfg.recognizer.palm_strict
+    cfg.timing.leader_hold_s = 1.5  # these tests exercise the strict rules at the original hold; the shipped hold is 0.75 s
     return ModeEngine(Bus(), Bindings(), cfg.timing.to_timing(), fire=lambda a, t: None)
 
 
@@ -73,7 +74,7 @@ def test_saved_config_keeps_only_the_profile_and_user_deltas(tmp_path):
     assert 'profile = "strict"' in text and "box_x0 = 0.2" in text
     assert "leader_hold_s" not in text and "[timing]" not in text  # defaults are not frozen into the file
     back = load_config(p)
-    assert back.timing.leader_hold_s == 1.5 and back.drag.box_x0 == 0.2 and back.leader.profile == STRICT
+    assert back.timing.leader_hold_s == 0.75 and back.drag.box_x0 == 0.2 and back.leader.profile == STRICT
 
 
 def test_saved_fast_profile_loads_as_fast(tmp_path):

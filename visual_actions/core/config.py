@@ -14,7 +14,7 @@ from .types import Action, ActionKind, Binding
 
 @dataclass
 class TimingConfig:
-    leader_hold_s: float = 1.5  # a clear, still palm for this long, straight
+    leader_hold_s: float = 0.75  # a clear, still palm for this long, straight (halved from 1.5 s on 2026-10-09)
     command_timeout_s: float = 5.0
     escape_fist_s: float = 1.0
     escape_lost_s: float = 1.5
@@ -368,7 +368,7 @@ def apply_profile(cfg: Config, profile: str) -> Config:
     t, r = cfg.timing, cfg.recognizer
     cfg.leader.profile = profile
     if profile == STRICT:
-        t.leader_hold_s, t.confidence_gain, t.leader_min_confidence = 1.5, 1.0, 0.9
+        t.leader_hold_s, t.confidence_gain, t.leader_min_confidence = 0.75, 1.0, 0.9
         t.hold_break_tokens, t.hold_reset_on_move, t.quick_command = 1, True, False
         t.hold_lost_grace_s = 0.0  # the palm must be continuous: a lost hand resets the hold
         r.palm_strict = True

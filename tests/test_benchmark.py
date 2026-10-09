@@ -40,7 +40,7 @@ from visual_actions.tools.synth import write_drag_session, write_session
 
 FIRE_LEFT = [("open_palm", 2.5), ("h_left", 0.8), ("lost", 0.5)]
 FIRE_THEN_FIST = [("open_palm", 2.5), ("h_left", 0.8), ("fist", 1.5), ("lost", 0.5)]
-PALM_BROKEN = [("open_palm", 0.8), ("none", 0.5), ("lost", 0.5)]
+PALM_BROKEN = [("open_palm", 0.5), ("none", 0.5), ("lost", 0.5)]
 TIMEOUT = [("open_palm", 2.5), ("none", 6.5), ("lost", 0.5)]
 
 
