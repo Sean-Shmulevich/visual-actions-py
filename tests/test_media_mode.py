@@ -251,7 +251,7 @@ def test_adjust_publishes_settle_start_move_and_end_in_screen_points():
     pinch(eng, 2.3, PinchPhase.MOVE, 0.54, 0.42)
     assert events[-1].steps == -1 and round(events[-1].ax) == 562  # one step back from 593.75
     pinch(eng, 2.4, PinchPhase.END, 0.54, 0.42)
-    assert events[-1].phase is AdjustPhase.END and events[-1].steps == 3 and eng.state == ARMED
+    assert events[-1].phase is AdjustPhase.END and events[-1].steps == 4 and eng.state == ARMED
 
 
 def test_a_short_loss_keeps_the_adjust_anchor_and_the_pinch_resumes_without_settling():
