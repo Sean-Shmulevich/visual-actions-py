@@ -11,7 +11,7 @@ from ..core.drag import DragEvent
 from ..core.events import ActionFired, Bus, HandLost, HandSeen, ModeChanged, Tick, TokenEmitted
 from ..core.pipeline import Pipeline
 from ..core.presence import PresenceFilter
-from ..core.recorder import read_session
+from ..core.recorder import read_records
 from ..core.types import HandFrame
 from ..platform.mock.automation import MockAutomation
 
@@ -35,13 +35,14 @@ def replay_full(
     tail_s: float = 1.0,
     automation: MockAutomation | None = None,
     presence: PresenceFilter | None = None,
+    bus: Bus | None = None,
 ) -> ReplayResult:
     """With `presence`, every recorded frame is re-filtered through it (a recording holds the
     frames that passed presence at the time, plus its lost markers): a fast exit the filter
     now predicts becomes a HandLost before the recorded marker, and the marker is skipped
     if the filter already declared the hand lost."""
     cfg = config or default_config()
-    bus = Bus()
+    bus = bus or Bus()  # a caller's bus lets it subscribe before the first event
     automation = automation or MockAutomation()
     Pipeline(bus, cfg, Dispatcher(bus, automation))
     fired: list[ActionFired] = []
@@ -59,11 +60,11 @@ def replay_full(
 
     tick_ns = cfg.timing.tick_ms * 1_000_000
     clock: int | None = None
-    records = list(read_session(path))
+    records = list(read_records(path))
     result = ReplayResult(fired, drags, automation, modes)
     if not records:
         return result
-    last_t = max(r if isinstance(r, int) else r.t_ns for r in records)
+    last_t = max(r if isinstance(r, int) else r.t_ns for r, _ in records)
     end_t = last_t + int(tail_s * 1e9)
 
     def advance(to_ns: int) -> None:
@@ -76,15 +77,16 @@ def replay_full(
             clock += tick_ns
             bus.publish(Tick(clock))
 
-    for r in records:
+    for r, extra in records:
         if isinstance(r, HandFrame):
             advance(r.t_ns)
+            face = float(extra.get("face", 0.0))  # a live session's recorded hand/face overlap, so the veto replays
             if presence is None:
-                bus.publish(HandSeen(r))
+                bus.publish(HandSeen(r, face))
                 continue
             pr = presence.update(r)
             if pr.seen is not None:
-                bus.publish(HandSeen(pr.seen))
+                bus.publish(HandSeen(pr.seen, face))
             elif pr.lost is not None:
                 bus.publish(HandLost(r.t_ns, *pr.lost))
         else:

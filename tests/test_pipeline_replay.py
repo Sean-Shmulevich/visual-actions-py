@@ -5,8 +5,10 @@ from pathlib import Path
 import pytest
 
 from visual_actions.core.config import default_config
-from visual_actions.tools.replay import replay
-from visual_actions.tools.synth import write_session
+from visual_actions.core.events import Bus, HandSeen, PalmVetoed
+from visual_actions.core.recorder import Recorder
+from visual_actions.tools.replay import replay, replay_full
+from visual_actions.tools.synth import hand_frame, write_session
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -54,3 +56,23 @@ def test_even_a_bound_fist_cancels(fixtures):
     cfg = default_config()
     cfg.namespaces["window"].bindings.append({"gesture": "fist", "action": {"kind": "key", "name": "Fist", "chord": "ctrl+down"}})
     assert replay(fixtures / "escape_fist.jsonl", cfg) == []
+
+
+def test_replay_publishes_the_recorded_face_overlap(tmp_path: Path):
+    from .test_face_veto import bunched_palm
+
+    rec = Recorder(tmp_path / "face.jsonl")
+    for i in range(60):  # a hand resting on a cheek: bunched fingers, 75 % inside the face box
+        rec.write(bunched_palm(i * 33_000_000, mirror_to_raw=True), {"face": 0.75})
+    rec.write(hand_frame("open_palm", 60 * 33_000_000))  # a plain dataset line: overlap defaults to 0
+    rec.close()
+    seen, vetoes = [], []
+    bus = Bus()
+    bus.subscribe(HandSeen, seen.append)
+    bus.subscribe(PalmVetoed, vetoes.append)
+    cfg = default_config()
+    cfg.recognizer.model = None
+    r = replay_full(tmp_path / "face.jsonl", cfg, bus=bus)
+    assert [s.face_overlap for s in seen[:2]] == [0.75, 0.75] and seen[-1].face_overlap == 0.0
+    assert vetoes and vetoes[0].overlap == 0.75
+    assert not any(m.new == "holding" for m in r.modes)

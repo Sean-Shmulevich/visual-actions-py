@@ -184,6 +184,7 @@ class SklearnRecognizer:
     def __init__(self, model_path: Path) -> None:
         import joblib
 
+        self.path = model_path
         self._model = joblib.load(model_path)
         self._classes = list(self._model.classes_)
 
@@ -200,6 +201,11 @@ class CompositeRecognizer:
         self.rules = rules
         self.model = model
         self.rule_min = rule_min
+
+    @property
+    def model_path(self) -> Path | None:
+        """The joblib the model tier loaded, or None when rules run alone (for a session's meta.json)."""
+        return getattr(self.model, "path", None)
 
     def classify(self, hf: HandFrame) -> tuple[str, float]:
         name, conf = self.rules.classify(hf)

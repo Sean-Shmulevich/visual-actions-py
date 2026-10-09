@@ -5,22 +5,31 @@ One folder per run under the data dir:
                                               in segments of `segment_s` so a crash or a hard
                                               quit loses at most the last segment
     sessions/<YYYYmmdd-HHMMSS>/events.log     "elapsed  wall-clock  kind  details", one line each
-    sessions/<YYYYmmdd-HHMMSS>/landmarks.jsonl raw HandFrames (same format as datasets/)
+    sessions/<YYYYmmdd-HHMMSS>/landmarks.jsonl raw HandFrames (same format as datasets/) plus
+                                              "face": the hand/face overlap the capture thread saw
+    sessions/<YYYYmmdd-HHMMSS>/config.toml    the resolved Config the session ran with
+    sessions/<YYYYmmdd-HHMMSS>/meta.json      git hash, app version, host, screen, model path
 
 Frames are written from the capture thread; events from the main thread. The writer
-is guarded by a lock. Video is 640x480 mp4v, roughly 1-2 MB per minute.
+is guarded by a lock. Video is 640x480 mp4v, roughly 1-2 MB per minute. config.toml and
+meta.json make a replay reproduce the live run: same keys, same model, same veto input.
 """
 
 from __future__ import annotations
 
 import atexit
 import json
+import platform
+import socket
+import subprocess
+import sys
 import threading
 import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from .core.config import Config, save_config
 from .core.drag import DragEvent, DragPhase
 from .core.events import (
     ActionFired,
@@ -34,10 +43,54 @@ from .core.events import (
 )
 from .core.recorder import Recorder
 from .core.types import HandFrame
+from .paths import REPO_ROOT
+
+
+def git_short_hash(repo: Path = REPO_ROOT) -> str | None:
+    """`git rev-parse --short HEAD` of the repo, or None when git or the repo is not there."""
+    try:
+        r = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=repo, capture_output=True, text=True, timeout=2, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return r.stdout.strip() or None
+
+
+def app_version() -> str:
+    try:
+        from importlib.metadata import version
+
+        return version("visual-actions")
+    except Exception:  # noqa: BLE001 - not installed as a distribution
+        return "unknown"
+
+
+def session_meta(**extra: Any) -> dict[str, Any]:
+    """What a replay needs to know about the run besides the config: every value best-effort,
+    so a missing git or model never stops a session from starting."""
+    meta: dict[str, Any] = {
+        "git": git_short_hash(),
+        "version": app_version(),
+        "hostname": socket.gethostname(),
+        "platform": platform.platform(),
+        "python": sys.version.split()[0],
+    }
+    meta.update(extra)
+    return meta
 
 
 class SessionRecorder:
-    def __init__(self, root: Path, bus: Bus | None = None, fps: float = 30.0, log_tokens: bool = True, segment_s: float = 120.0) -> None:
+    def __init__(
+        self,
+        root: Path,
+        bus: Bus | None = None,
+        fps: float = 30.0,
+        log_tokens: bool = True,
+        segment_s: float = 120.0,
+        config: Config | None = None,
+        meta: dict[str, Any] | None = None,
+    ) -> None:
+        """`config` is snapshotted to <session>/config.toml and `meta` (screen size, model path,
+        whatever the caller knows) joins the generic session_meta() in <session>/meta.json."""
         self.segment_s = segment_s
         self._segment = 0
         self._segment_started_ns = 0
@@ -57,6 +110,10 @@ class SessionRecorder:
         self._index = (self.dir / "video.idx").open("w", encoding="utf-8", buffering=1)
         self._segment_frames = 0
         self.log("session", f"started {self.started_wall:%Y-%m-%d %H:%M:%S} t0_ns={self.t0}")  # t0_ns joins events.log to landmarks.jsonl
+        self.meta = session_meta(started=self.started_wall.isoformat(timespec="seconds"), **(meta or {}))
+        (self.dir / "meta.json").write_text(json.dumps(self.meta, indent=2, default=str) + "\n", encoding="utf-8")
+        if config is not None:
+            save_config(config, self.dir / "config.toml")
         self._closed = False
         atexit.register(self.close)
         if bus is not None:
@@ -100,9 +157,11 @@ class SessionRecorder:
             self._video.write(img)
             self.frames += 1
 
-    def write_hand(self, hf: HandFrame) -> None:
+    def write_hand(self, hf: HandFrame, face_overlap: float | None = None) -> None:
+        """`face_overlap` is the hand/face box fraction the capture thread computed for the palm
+        veto; recorded as "face" so a replay sees the veto the live run saw."""
         with self._lock:
-            self._landmarks.write(hf)
+            self._landmarks.write(hf, {"face": round(face_overlap, 3)} if face_overlap is not None else None)
 
     def write_lost(self, t_ns: int) -> None:
         with self._lock:

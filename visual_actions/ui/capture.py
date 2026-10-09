@@ -81,7 +81,7 @@ class CaptureThread:
                     overlap = hand_face_overlap(pr.seen, faces.update(frame)) if faces.enabled else 0.0
                     self._put(HandSeen(pr.seen, overlap))
                     if self.sink is not None:
-                        self.sink.write_hand(pr.seen)
+                        self.sink.write_hand(pr.seen, overlap)
                 elif pr.lost:
                     self._lost(t_ns, *pr.lost)
         except Exception as exc:  # noqa: BLE001 - surfaced to the UI through .error

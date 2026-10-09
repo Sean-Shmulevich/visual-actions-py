@@ -69,7 +69,7 @@ class VisualActionsApp(rumps.App):
         self.cfg = cfg
         self.services = factory.create(cfg.camera, dry_run=self.dry_run)
         self.bus = Bus()
-        Pipeline(self.bus, cfg, Dispatcher(self.bus, self.services.automation))
+        self.pipeline = Pipeline(self.bus, cfg, Dispatcher(self.bus, self.services.automation))
         self._feedback = []
         if cfg.feedback.audio:
             from .sound import SoundFeedback
@@ -159,7 +159,7 @@ class VisualActionsApp(rumps.App):
         if self.cfg.feedback.record_sessions:
             from ..paths import sessions_dir
 
-            self.session = SessionRecorder(sessions_dir(), self.bus)
+            self.session = SessionRecorder(sessions_dir(), self.bus, config=self.cfg, meta=self._session_meta())
         self.preview = DebugPreview() if self.cfg.feedback.preview else None
         self.capture = CaptureThread(self.services.camera, self.q, use_gate=self.use_gate, sink=self.session, face_veto=self.cfg.leader.face_veto, preview=self.preview, presence=PresenceFilter.from_config(self.cfg.presence))
         self.capture.start()
@@ -234,6 +234,17 @@ class VisualActionsApp(rumps.App):
             rumps.alert("Dashboard", "The dashboard is disabled in config or its port was busy.")
             return
         subprocess.run(["open", self.dashboard.url], check=False)
+
+    def _session_meta(self) -> dict:
+        """What this process knows for the session's meta.json: the screen and the model in use."""
+        meta: dict = {"dry_run": self.dry_run, "model_path": None, "screen": None}
+        path = getattr(self.pipeline.recognizer, "model_path", None)
+        meta["model_path"] = str(path) if path is not None else None
+        try:
+            meta["screen"] = list(self.services.automation.screen_size())
+        except Exception:  # noqa: BLE001 - best-effort
+            pass
+        return meta
 
     def _capture_stats(self) -> dict:
         c = self.capture
