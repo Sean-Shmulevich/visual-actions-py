@@ -54,7 +54,9 @@ class SessionRecorder:
         self.mode = "idle"
         self._log = (self.dir / "events.log").open("w", encoding="utf-8", buffering=1)
         self._landmarks = Recorder(self.dir / "landmarks.jsonl")
-        self.log("session", f"started {self.started_wall:%Y-%m-%d %H:%M:%S}")
+        self._index = (self.dir / "video.idx").open("w", encoding="utf-8", buffering=1)
+        self._segment_frames = 0
+        self.log("session", f"started {self.started_wall:%Y-%m-%d %H:%M:%S} t0_ns={self.t0}")  # t0_ns joins events.log to landmarks.jsonl
         self._closed = False
         atexit.register(self.close)
         if bus is not None:
@@ -86,6 +88,11 @@ class SessionRecorder:
                 self._segment_started_ns = t_ns
                 fourcc = cv2.VideoWriter_fourcc(*"mp4v")  # type: ignore[attr-defined]
                 self._video = cv2.VideoWriter(str(self.dir / f"video-{self._segment:03d}.mp4"), fourcc, self.fps, (w, h))
+                self._segment_frames = 0
+            # frame index: "segment frame t_ns" per written frame, so a clip for an event can be cut at the
+            # exact video frame (the writer's fixed fps drifts from the camera's real cadence)
+            self._index.write(f"{self._segment} {self._segment_frames} {t_ns}\n")
+            self._segment_frames += 1
             img = cv2.flip(frame, 1)  # selfie view, same as the preview
             stamp = f"{self.elapsed_s(t_ns):8.2f}s  {self.mode}"
             cv2.putText(img, stamp, (10, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 0, 0), 4)
@@ -154,6 +161,7 @@ class SessionRecorder:
             self._log.write(json.dumps({"summary": summary}) + "\n")
             self._log.close()
             self._landmarks.close()
+            self._index.close()
             if self._video is not None:
                 self._video.release()
                 self._video = None
