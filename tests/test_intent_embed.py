@@ -14,9 +14,11 @@ from visual_actions.intent.embed import (
     PROPAGATED_MODEL,
     Embed1Client,
     Embedding,
+    MIN_FRAMES,
     FakeEmbed,
     SpendCapReached,
     embeddings_path,
+    pad_frames,
     parse_embedding,
     propagate,
     run_embed,
@@ -133,6 +135,13 @@ def test_spend_cap_counts_every_attempt():
 
 
 # -- run_embed ---------------------------------------------------------------------------
+
+
+def test_short_clips_hold_their_last_frame():
+    assert MIN_FRAMES == 8
+    assert pad_frames([b"a", b"b"]) == [b"a"] + [b"b"] * 7
+    assert pad_frames([b"a"] * 8) == [b"a"] * 8 and pad_frames([b"a"] * 9) == [b"a"] * 9
+    assert pad_frames([]) == []
 
 
 def segments_for(s: Path) -> Path:

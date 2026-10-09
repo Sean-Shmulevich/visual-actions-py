@@ -13,7 +13,9 @@ Endpoint: an OpenAI-style embeddings server (the hackathon NIM on port 8003)
     -> {"data": [{"embedding": [256 floats]}], "usage": {"num_videos": 0|1, ...}}
 `request_type` is Cosmos' own field (query | bulk_text | bulk_video); there is no `dimensions`.
 Video goes in as the same 4 fps mp4 the Cosmos Reason pass sends (clips.frames_for + frames_to_mp4
-over the segment's span), so the two passes see the same footage.
+over the segment's span), so the two passes see the same footage. The NIM samples MIN_FRAMES (8)
+frames from the clip and fails preprocessing on a shorter one (a 1.7 s drag at 4 fps is 7 frames),
+so a short clip is padded by holding its last frame.
 
 Only the standard library talks HTTP (urllib); the opener and the clock are injectable for tests.
 numpy does the similarity maths.
@@ -42,6 +44,7 @@ DEFAULT_URL = "http://127.0.0.1:8003/v1"
 DEFAULT_MODEL = "nvidia/cosmos-embed1"
 DIM = 256
 FPS = 4.0
+MIN_FRAMES = 8  # Embed1 samples this many frames; fewer and the NIM rejects the clip
 PROPAGATED_MODEL = "embed1-propagated"
 SEED_VERDICTS = frozenset({Verdict.INTENDED, Verdict.MISFIRE, Verdict.MISSED, Verdict.NO_EVENT})
 SEED_MIN_CONF = 0.8
@@ -183,6 +186,11 @@ def parse_embedding(payload: dict[str, Any]) -> list[float]:
 # -- the pass --------------------------------------------------------------------------
 
 
+def pad_frames(frames: list[bytes], n: int = MIN_FRAMES) -> list[bytes]:
+    """At least `n` frames: a short clip holds its last frame."""
+    return frames + [frames[-1]] * (n - len(frames)) if frames and len(frames) < n else frames
+
+
 def run_embed(
     session_dir: Path,
     segments_path: Path,
@@ -214,7 +222,7 @@ def run_embed(
                 log(f"{seg.segment_id}: no frames, skipped")
             continue
         try:
-            vec = client.embed_video(clips.frames_to_mp4(frames, fps))
+            vec = client.embed_video(clips.frames_to_mp4(pad_frames(frames), fps))
         except SpendCapReached as e:
             if log:
                 log(str(e))
@@ -223,7 +231,7 @@ def run_embed(
         append_jsonl(out_path, e)
         out.append(e)
         if log:
-            log(f"{seg.segment_id}: {len(frames)} frames -> {len(vec)}-dim")
+            log(f"{seg.segment_id}: {len(frames)} frames{f' (held to {MIN_FRAMES})' if len(frames) < MIN_FRAMES else ''} -> {len(vec)}-dim")
     return out
 
 
