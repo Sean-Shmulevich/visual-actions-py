@@ -177,6 +177,14 @@ class SessionRecorder:
         with self._lock:
             self._log.write(line)
 
+    def mark_wrong(self, action_fired: bool) -> str:
+        """The menu bar's "Last action was wrong": a `human` line the intent labellers read as a
+        weight-1.0 misfire vote on the last fire, or on the last arm when nothing fired since it.
+        Returns the text written."""
+        text = "last action wrong" if action_fired else "last arm wrong"
+        self.log("human", text)
+        return text
+
     def _on_mode(self, ev: ModeChanged) -> None:
         self.mode = ev.new
         self.log("mode", f"{ev.old} -> {ev.new}" + (f" [{ev.namespace}]" if ev.namespace else ""), ev.t_ns)

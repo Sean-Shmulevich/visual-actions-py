@@ -112,3 +112,17 @@ def test_recorder_round_trips_extra_keys(tmp_path: Path):
     out = list(read_records(tmp_path / "x.jsonl"))
     assert [e for _, e in out] == [{"face": 0.25}, {}, {}]
     assert out[2][0] == 456
+
+
+def test_human_marker_line(tmp_path: Path):
+    s = SessionRecorder(tmp_path)
+    assert s.mark_wrong(action_fired=True) == "last action wrong"
+    assert s.mark_wrong(action_fired=False) == "last arm wrong"
+    s.close()
+    log = (s.dir / "events.log").read_text().splitlines()
+    assert log[1].split(None, 2)[2] == "human   last action wrong"
+    assert log[2].split(None, 2)[2] == "human   last arm wrong"
+    from visual_actions.intent.events import parse_events
+
+    evs = parse_events(s.dir / "events.log")
+    assert [(e.kind, e.text) for e in evs[1:3]] == [("human", "last action wrong"), ("human", "last arm wrong")]

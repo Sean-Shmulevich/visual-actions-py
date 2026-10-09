@@ -33,6 +33,12 @@ def play(name: str) -> None:
 
 
 class SoundFeedback:
+    cancel_cue = "timeout"  # the sound of a window closing with nothing done: also the "that was wrong" acknowledgement
+
+    def cue(self, name: str) -> None:
+        """Play one of MAP's sounds on request (the menu bar's "Last action was wrong")."""
+        play(name)
+
     def __init__(self, bus: Bus) -> None:
         bus.subscribe(ModeChanged, self._on_mode)
         bus.subscribe(ActionFired, self._on_action)

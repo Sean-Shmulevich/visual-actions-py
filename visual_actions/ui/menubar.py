@@ -46,12 +46,15 @@ class VisualActionsApp(rumps.App):
         self._learn_refresh_at = 0.0
         self._marked_today = 0
         self._marked_day = date.today()  # noqa: DTZ011 - "today" in the user's local day
+        self._last_fire_ns: int | None = None  # for "Last action was wrong": action vs arm
+        self._last_arm_ns: int | None = None
         self._build(cfg)
 
         self.perm_item = rumps.MenuItem("Permissions…", callback=self.show_permissions)
         self.toggle_item = rumps.MenuItem("Stop", callback=self.toggle)
         self.dry_item = rumps.MenuItem("Dry run (print only)", callback=self.toggle_dry)
         self.dry_item.state = dry_run
+        self.wrong_item = rumps.MenuItem("Last action was wrong", callback=self.mark_wrong, key="w")  # Cmd-W while the menu is open
         self.learn_menu = self._build_learning_menu()
         self.menu = [
             self.status_item,
@@ -64,6 +67,7 @@ class VisualActionsApp(rumps.App):
             rumps.MenuItem("Open dashboard", callback=self.open_dashboard),
             rumps.MenuItem("Open sessions folder", callback=self.open_sessions),
             None,
+            self.wrong_item,
             self.learn_menu,
             None,
             rumps.MenuItem("Quit", callback=self.quit),
@@ -116,6 +120,9 @@ class VisualActionsApp(rumps.App):
                 print(f"dashboard disabled: {exc}")
         self.bus.subscribe(ModeChanged, lambda e: self._set_title(mode_icon(e.new, e.namespace)))
         self.bus.subscribe(ActionFired, lambda e: self._set_status(f"Last: {e.action.name} {'ok' if e.ok else e.message}"))
+        self.bus.subscribe(ModeChanged, self._note_arm)
+        self.bus.subscribe(ActionFired, self._note_fire)
+        self._last_fire_ns = self._last_arm_ns = None
 
     def _teardown(self) -> None:
         """Hide the panels and free the dashboard port; the old bus and pipeline go with the references."""
@@ -286,6 +293,34 @@ class VisualActionsApp(rumps.App):
             return
         self._learn_log = log
         self._set_status("learning running…")
+        self._refresh_learning()
+
+    # -- "that was wrong" ----------------------------------------------------------
+
+    def _note_arm(self, ev: ModeChanged) -> None:
+        if ev.new == "armed" and ev.old != "armed":
+            self._last_arm_ns = ev.t_ns
+
+    def _note_fire(self, ev: ActionFired) -> None:
+        self._last_fire_ns = ev.t_ns
+
+    def action_fired_since_arm(self) -> bool:
+        return self._last_fire_ns is not None and (self._last_arm_ns is None or self._last_fire_ns >= self._last_arm_ns)
+
+    def mark_wrong(self, _item) -> None:
+        """Log `human  last action wrong` (or `last arm wrong` when nothing fired since the last
+        arm) into the running session, play the cancel cue, count it for the Learning line."""
+        if self.session is None:
+            self._set_status("not recording: start a session to mark it")
+            return
+        text = self.session.mark_wrong(self.action_fired_since_arm())
+        for listener in self._feedback:
+            cue = getattr(listener, "cue", None)
+            if callable(cue):
+                cue(getattr(listener, "cancel_cue", "timeout"))
+        self._marked_today, self._marked_day = lm.marks_today(self._marked_today, self._marked_day, date.today())  # noqa: DTZ011
+        self._marked_today += 1
+        self._set_status(f"marked: {text}")
         self._refresh_learning()
 
     def open_report(self, _item) -> None:
