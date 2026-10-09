@@ -113,6 +113,12 @@ class CursorOverlay:
         bus.subscribe(DragEvent, self._on_drag)
         bus.subscribe(Tick, self._on_tick)
 
+    def close(self) -> None:
+        """Hide every panel; the app drops the bus this overlay listens on when it rebuilds from a new config."""
+        for panel in (self.cursor, self.frame, self.preview):
+            if panel.isVisible():
+                panel.orderOut_(None)
+
     def _on_mode(self, ev: ModeChanged) -> None:
         self.mode = ev.new
         if ev.new not in (ARMED, DRAGGING):

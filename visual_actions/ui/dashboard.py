@@ -58,6 +58,7 @@ class Dashboard:
 
     def close(self) -> None:
         self.server.shutdown()
+        self.server.server_close()  # free the port: a settings save rebuilds the dashboard on the same one
 
     # -- bus handlers (main thread) ------------------------------------------------
 

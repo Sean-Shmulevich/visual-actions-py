@@ -142,6 +142,11 @@ class Overlay:
         bus.subscribe(ActionFired, self._on_action)
         bus.subscribe(Tick, self._on_tick)
 
+    def close(self) -> None:
+        """Hide the panel; the app drops the bus this overlay listens on when it rebuilds from a new config."""
+        if self.panel.isVisible():
+            self.panel.orderOut_(None)
+
     def _on_drag(self, ev: DragEvent) -> None:
         if ev.phase is DragPhase.PAUSE:
             self.lost_since_ns = ev.t_ns

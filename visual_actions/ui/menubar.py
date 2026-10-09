@@ -5,6 +5,7 @@ from __future__ import annotations
 import queue
 import subprocess
 import time
+from typing import TYPE_CHECKING
 
 import rumps
 
@@ -19,6 +20,10 @@ from ..session import SessionRecorder
 from .capture import CaptureThread
 from .preview import DebugPreview
 
+if TYPE_CHECKING:
+    from .dashboard import Dashboard
+    from .settings import SettingsWindow
+
 
 class VisualActionsApp(rumps.App):
     def __init__(self, cfg: Config, dry_run: bool, use_gate: bool) -> None:
@@ -26,44 +31,16 @@ class VisualActionsApp(rumps.App):
         self.cfg = cfg
         self.dry_run = dry_run
         self.use_gate = use_gate
-        self.services = factory.create(cfg.camera, dry_run=dry_run)
-        self.bus = Bus()
         self.q: queue.Queue = queue.Queue(maxsize=64)
         self.capture: CaptureThread | None = None
         self.preview: DebugPreview | None = None
         self.session: SessionRecorder | None = None
-
-        Pipeline(self.bus, cfg, Dispatcher(self.bus, self.services.automation))
-        if cfg.feedback.audio:
-            from .sound import SoundFeedback
-
-            SoundFeedback(self.bus)
-        if cfg.feedback.cursor:
-            from .cursor import CursorOverlay
-
-            CursorOverlay(self.bus, while_armed=cfg.feedback.cursor_while_armed)
-        if cfg.feedback.popup:
-            from .overlay import Overlay
-
-            t = cfg.timing.to_timing()
-            Overlay(
-                self.bus,
-                t.leader_hold_ns,
-                t.command_timeout_ns,
-                cfg.timing.popup_ms,
-                t.drag_lost_grace_ns,
-                volume=self._system_volume,
-            )
-
-        self.dashboard = None
-        if cfg.feedback.dashboard:
-            from .dashboard import Dashboard
-
-            try:
-                self.dashboard = Dashboard(self.bus, cfg, stats=self._capture_stats, port=cfg.feedback.dashboard_port)
-            except OSError as exc:  # port busy: run without it
-                print(f"dashboard disabled: {exc}")
+        self.settings: SettingsWindow | None = None
         self.status_item = rumps.MenuItem("Status: starting")
+        self._feedback: list[object] = []  # SoundFeedback / CursorOverlay / Overlay, closed on a rebuild
+        self.dashboard: Dashboard | None = None
+        self._build(cfg)
+
         self.perm_item = rumps.MenuItem("Permissions…", callback=self.show_permissions)
         self.toggle_item = rumps.MenuItem("Stop", callback=self.toggle)
         self.dry_item = rumps.MenuItem("Dry run (print only)", callback=self.toggle_dry)
@@ -74,16 +51,92 @@ class VisualActionsApp(rumps.App):
             None,
             self.toggle_item,
             self.dry_item,
+            rumps.MenuItem("Settings…", callback=self.show_settings),
             rumps.MenuItem("Open config file", callback=lambda _: subprocess.run(["open", "-t", str(config_path())], check=False)),
             rumps.MenuItem("Open dashboard", callback=self.open_dashboard),
             rumps.MenuItem("Open sessions folder", callback=self.open_sessions),
             None,
             rumps.MenuItem("Quit", callback=self.quit),
         ]
-        self.bus.subscribe(ModeChanged, lambda e: self._set_title(mode_icon(e.new, e.namespace)))
-        self.bus.subscribe(ActionFired, lambda e: self._set_status(f"Last: {e.action.name} {'ok' if e.ok else e.message}"))
         self.timer = rumps.Timer(self.tick, cfg.timing.tick_ms / 1000)
         self._install_terminate_hook()
+
+    def _build(self, cfg: Config) -> None:
+        """Everything that reads the config when it is constructed: the platform driver, a fresh
+        bus, the pipeline, the feedback listeners and the dashboard. `apply_config` tears the
+        previous set down and calls this again, so a saved config is applied by one rebuild
+        instead of per-key live updates."""
+        self.cfg = cfg
+        self.services = factory.create(cfg.camera, dry_run=self.dry_run)
+        self.bus = Bus()
+        Pipeline(self.bus, cfg, Dispatcher(self.bus, self.services.automation))
+        self._feedback = []
+        if cfg.feedback.audio:
+            from .sound import SoundFeedback
+
+            self._feedback.append(SoundFeedback(self.bus))
+        if cfg.feedback.cursor:
+            from .cursor import CursorOverlay
+
+            self._feedback.append(CursorOverlay(self.bus, while_armed=cfg.feedback.cursor_while_armed))
+        if cfg.feedback.popup:
+            from .overlay import Overlay
+
+            t = cfg.timing.to_timing()
+            self._feedback.append(
+                Overlay(
+                    self.bus,
+                    t.leader_hold_ns,
+                    t.command_timeout_ns,
+                    cfg.timing.popup_ms,
+                    t.drag_lost_grace_ns,
+                    volume=self._system_volume,
+                )
+            )
+
+        self.dashboard = None
+        if cfg.feedback.dashboard:
+            from .dashboard import Dashboard
+
+            try:
+                self.dashboard = Dashboard(self.bus, cfg, stats=self._capture_stats, port=cfg.feedback.dashboard_port)
+            except OSError as exc:  # port busy: run without it
+                print(f"dashboard disabled: {exc}")
+        self.bus.subscribe(ModeChanged, lambda e: self._set_title(mode_icon(e.new, e.namespace)))
+        self.bus.subscribe(ActionFired, lambda e: self._set_status(f"Last: {e.action.name} {'ok' if e.ok else e.message}"))
+
+    def _teardown(self) -> None:
+        """Hide the panels and free the dashboard port; the old bus and pipeline go with the references."""
+        for listener in self._feedback:
+            close = getattr(listener, "close", None)
+            if callable(close):
+                close()
+        self._feedback = []
+        if self.dashboard is not None:
+            self.dashboard.close()
+            self.dashboard = None
+        while True:  # events the old capture thread left behind belong to the old pipeline
+            try:
+                self.q.get_nowait()
+            except queue.Empty:
+                break
+
+    def apply_config(self, cfg: Config) -> None:
+        """The settings window saved: stop the capture, rebuild from the new config, start again
+        if it was running. Every key is applied this way (the camera reopens and a new session
+        recording starts); none is patched live."""
+        running = self.capture is not None
+        self.stop()
+        self._teardown()
+        self._build(cfg)
+        if self.timer.is_alive():
+            self.timer.stop()
+            self.timer.interval = cfg.timing.tick_ms / 1000
+            self.timer.start()
+        else:
+            self.timer.interval = cfg.timing.tick_ms / 1000
+        if running:
+            self.start()
 
     def _system_volume(self) -> tuple[float, bool] | None:
         # looked up on each call: a reload swaps self.services
@@ -159,6 +212,15 @@ class VisualActionsApp(rumps.App):
                 if isinstance(owner, Pipeline):
                     owner.dispatcher.automation = self.services.automation
         self._set_status("dry run " + ("on" if self.dry_run else "off"))
+
+    def show_settings(self, _item) -> None:
+        """One window for the life of the app: closing hides it, this brings it back."""
+        if self.settings is None:
+            from .settings import SettingsWindow
+            from .settings_model import SettingsModel
+
+            self.settings = SettingsWindow(SettingsModel(self.cfg), on_save=self.apply_config, path=config_path())
+        self.settings.show()
 
     def open_sessions(self, _item) -> None:
         from ..paths import sessions_dir

@@ -58,6 +58,8 @@ visual_actions/
   ui/
     menubar.py           # rumps app, toggles, Actions panel entry point
     overlay.py           # NSWindow indicator: mode label, countdown ring, last token
+    settings_model.py    # settings view-model: fields from the config dataclasses, parse/validate/diff (no AppKit)
+    settings.py          # NSWindow settings form built from the view-model; Save rebuilds the pipeline
   plugins/
     loader.py            # discovers ~/…/actions/*/action.toml, validates, builds PluginActions
     runner.py            # picks script by platform, runs via automation.run_native
@@ -181,6 +183,14 @@ Latency budget, gesture complete → action fired, target 150 ms:
 - Quartz post ~5 ms
 
 Sum ≈ 110 ms. If the tick is too coarse, drop to 10 ms; it is a config value.
+
+Settings window (`ui/settings.py`, menu "Settings…"): a native NSWindow with one tab per
+config section, built in code on the main thread from `ui/settings_model.py`, which derives
+the form from the config dataclasses (field name, type, the inline `# comment` as a tooltip,
+`leader.profile` as a popup, a slider where the range is obvious), so a new key appears
+without a UI edit. Save writes the profile + deltas via `save_config` and the menu bar app
+applies it by one deterministic rebuild (`apply_config`: stop capture → new bus, pipeline,
+feedback, dashboard → start); no key is patched live, and the window says so.
 
 ## 6. Tier 0 gate (`core/gate.py`)
 
