@@ -26,6 +26,27 @@ def models_dir() -> Path:
     return data_dir() / "models"
 
 
+def user_models_dir() -> Path:
+    """Per-user models trained by the nightly learning job (learn/)."""
+    return models_dir() / "user"
+
+
+def learn_dir() -> Path:
+    """State, reports and logs of the nightly learning job."""
+    return data_dir() / "learn"
+
+
+def live_model_path() -> Path | None:
+    """The classifier the app loads: the promoted per-user model (models/user/current.joblib,
+    a pointer the learning job switches atomically) when it exists, else the shipped
+    models/gestures.joblib, else None (rules only)."""
+    current = user_models_dir() / "current.joblib"
+    if current.exists():  # follows the symlink; a dangling pointer falls through to the shipped model
+        return current
+    shipped = models_dir() / "gestures.joblib"
+    return shipped if shipped.exists() else None
+
+
 def sessions_dir() -> Path:
     return data_dir() / "sessions"
 

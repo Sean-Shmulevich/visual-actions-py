@@ -64,6 +64,12 @@ visual_actions/
     loader.py            # discovers ~/…/actions/*/action.toml, validates, builds PluginActions
     runner.py            # picks script by platform, runs via automation.run_native
     schema.py            # manifest schema
+  learn/                 # the nightly learning job (§16a); platform-free except schedule.py
+    job.py               # run(): sessions -> labels -> candidate -> gate -> promote; reports
+    trainer.py           # per-user weighted training, versioned joblib + manifest
+    evaluate.py          # candidate vs champion: held-out frames, replayed engine metrics, the gate
+    versions.py          # models/user/current.joblib pointer: promote, rollback, prune
+    schedule.py          # launchd agent (macOS)
   tools/
     record.py            # CLI: record a labelled dataset
     train.py             # CLI: train tier 2 from datasets → models/gestures.joblib
@@ -666,6 +672,45 @@ Logistic regression on the 65-float vector: 0.999 train accuracy, every recordin
 classified correctly, and the first live arm-and-fire succeeded with the model
 (`--dry`). No held-out score yet; the trainer prints one automatically once a second
 session per class exists. `none` needs far more variety than one 30 s take.
+
+## 16a. The nightly learning job (`learn/`)
+
+Added 2026-10-09. The app records sessions all day; at `learn.hour` (02:00) a launchd
+agent runs `python -m visual_actions.learn run`:
+
+1. Every closed session not yet in `learn/state.json` (one still being written waits; one
+   unclosed for 15 min counts as crashed) is cut into segments if `intent/segments.jsonl`
+   is missing, judged by the passes whose credentials exist (Cosmos needs `NVIDIA_API_KEY`,
+   JEV `TYPESAFE_API_KEY`, the tagger `make_tagger()`'s Codex CLI or an API key; a
+   FakeTagger fallback is skipped: canned tags never become labels), each best-effort, then
+   exported with `include_judge` (humans win), and marked processed.
+2. Below `learn.min_new_frames` (200) new labelled frames the night stops there.
+3. Otherwise `trainer.py` fits the candidate on every dataset file except the review
+   exports of the held-out sessions: the newest `learn.holdout_sessions` (3) sessions from
+   days other than the training day. Frames the user recorded and review frames weigh
+   their line's `weight` x `learn.user_weight` (2.0); HaGRID and synthetic frames weigh 1.0
+   and act as a prior; a judge-labelled fist row is refused (export refuses too). The model
+   is `models/user/gestures-<date>-<hash>.joblib` plus a manifest (hostname, location tag,
+   every file with its sha256, frames by class and source, metrics, decision).
+4. `evaluate.py` scores the candidate and the champion (`models/user/current.joblib`, else
+   the shipped `models/gestures.joblib`, else rules) on the held-out sessions: weighted frame
+   accuracy on their review files per class with fist recall apart, and a replay of each
+   session's landmarks through the whole pipeline per model, whose bus events are rendered
+   in session.py's line shape so `intent.segments` and `intent.labelfns` run unchanged and
+   count fires, weak-misfire fires (fist_after_fire / token_flip / immediate_redo), weak-
+   intended fires, arms, empty arms, broken holds and fist-cancelled drags.
+5. The gate: accuracy >= champion - `accuracy_margin` (0.01), weak-misfire fires <=, weak-
+   intended fires >= `intended_keep` (0.95) x champion, fist recall >= champion. A rule
+   with nothing to measure passes with a note; no held-out session at all is a refusal.
+6. Promotion switches `current.joblib`, a relative symlink, with `os.replace`; the live app
+   (`paths.live_model_path`) loads it when it exists. `models/gestures.joblib` is never
+   written. `learn rollback` repoints at the previous version; the last `keep_versions` (5)
+   stay on disk. `learn/reports/<date>.md` and `learn/last.json` carry the numbers and the
+   decision for the menu bar. `--dry-run` works in temporary copies and writes nothing
+   under `datasets/` or `models/`.
+
+First real dry run (2026-10-09, `--force`, no labels yet): 25,946 training frames, three
+held-out sessions replayed in 38 s; champion and candidate within one fire of each other.
 
 ## 17. Testing
 

@@ -22,10 +22,10 @@ def main() -> int:
 
     cfg = load_config(args.config or config_path())
     if cfg.recognizer.model is None and not args.no_model:
-        from .paths import models_dir
+        from .paths import live_model_path
 
-        trained = models_dir() / "gestures.joblib"
-        if trained.exists():
+        trained = live_model_path()  # the promoted per-user model when there is one, else the shipped one
+        if trained is not None:
             cfg.recognizer.model = str(trained)
     if args.replay:
         from .tools.replay import replay
