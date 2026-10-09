@@ -419,11 +419,20 @@ class ModeEngine:
         flick = any(a.arg("flick") in ("true", "True", "1") for a in slide.values())
         travel = max(abs(dx), abs(dy))
         if self._slide_out is not None:
-            # flick: the stroke fired on the way out; the way back to the anchor is the same gesture,
-            # not the opposite command, and nothing fires again until the hand is back near the anchor
-            if travel <= step / 2:
+            # flick: the stroke fired on the way out; the way back is the same gesture, not the
+            # opposite command. The flick is over when the hand is back near the anchor, or when it
+            # rests anywhere (that rest is the new anchor: hands drift, 2026-10-09), or when it has
+            # crossed the anchor by a full step the other way (a real flick that way, fired below)
+            out = self._slide_out
+            toward = {"left": -dx, "right": dx, "up": -dy, "down": dy}[out]  # travel along the fired direction
+            if travel <= step / 2 or tok.still:
                 self._slide_out = None
-            return True
+                self._slide_anchor = (tok.x, tok.y)
+                return True
+            if toward <= -step:
+                self._slide_out = None  # crossed well past the anchor the other way: falls through and fires
+            else:
+                return True
         if travel >= self.SLIDE_JUMP * step:
             self._slide_anchor = (tok.x, tok.y)  # a jump: re-anchor, never fire
         elif travel >= step:

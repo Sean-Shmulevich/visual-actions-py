@@ -123,11 +123,24 @@ def test_flick_out_and_back_is_one_switch_and_the_return_is_not_the_opposite():
     assert fired == ["Desktop left", "Desktop right", "Desktop left"]
 
 
-def test_flick_needs_the_return_before_a_second_switch_the_same_way():
+def test_flick_continuing_without_a_rest_is_one_switch_but_a_rest_allows_a_repeat():
     eng, fired = make_flick()
     eng.on_token(tok("point_up", 1.2, 0.50, still=True))
     eng.on_token(tok("point_up", 1.4, 0.38))
     eng.on_token(tok("point_up", 1.6, 0.26))  # kept going left: still one switch
-    eng.on_token(tok("point_up", 1.8, 0.26, still=True))  # resting out there does not re-anchor mid-flick
-    eng.on_token(tok("point_up", 2.0, 0.14))
-    assert fired == ["Desktop left"]
+    eng.on_token(tok("point_up", 1.8, 0.26, still=True))  # a rest ends the flick: the rest is the new anchor
+    eng.on_token(tok("point_up", 2.0, 0.14))  # a fresh flick left from there counts (repeat the same way)
+    assert fired == ["Desktop left", "Desktop left"]
+
+
+def test_flick_repeats_the_same_direction_after_a_rest_anywhere():
+    eng, fired = make_flick()
+    eng.on_token(tok("point_up", 1.2, 0.50, still=True))
+    eng.on_token(tok("point_up", 1.4, 0.38))  # left: fires
+    eng.on_token(tok("point_up", 1.6, 0.47))  # back, but not within half a step of the anchor
+    eng.on_token(tok("point_up", 1.8, 0.47, still=True))  # rests: that is the new anchor
+    eng.on_token(tok("point_up", 2.0, 0.35))  # left again from the rest: fires again
+    assert fired == ["Desktop left", "Desktop left"]
+    eng.on_token(tok("point_up", 2.2, 0.47))  # back toward the rest
+    eng.on_token(tok("point_up", 2.4, 0.60))  # and well past it the other way: a right
+    assert fired == ["Desktop left", "Desktop left", "Desktop right"]
