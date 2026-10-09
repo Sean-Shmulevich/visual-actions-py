@@ -579,6 +579,7 @@ def run_tag(
     out_path: Path,
     tagger: Tagger,
     limit: int | None = None,
+    kinds: set[str] | None = None,
     dry_run: bool = False,
     log: Callable[[str], None] = print,
 ) -> int:
@@ -591,7 +592,7 @@ def run_tag(
     done = by_id(read_jsonl(out_path, Tag))
     n = 0
     for seg in segments:
-        if seg.segment_id in done:
+        if seg.segment_id in done or (kinds is not None and seg.kind.value not in kinds):
             continue
         if limit is not None and n >= limit:
             break

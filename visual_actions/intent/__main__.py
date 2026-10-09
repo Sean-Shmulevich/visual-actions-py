@@ -91,6 +91,13 @@ def cmd_clips(args: argparse.Namespace) -> int:
     return 0
 
 
+def _shard(spec: str | None) -> tuple[int, int] | None:
+    if not spec:
+        return None
+    i, n = spec.split("/")
+    return int(i), int(n)
+
+
 def cmd_cosmos(args: argparse.Namespace) -> int:
     from . import cosmos
 
@@ -106,11 +113,11 @@ def cmd_cosmos(args: argparse.Namespace) -> int:
             out.unlink()
         judge = cosmos.DryRunJudge(session / "intent" / "cosmos-dry")
     else:
-        out = session / "intent" / "cosmos.jsonl"
+        out = session / "intent" / (f"cosmos.shard-{args.shard.split('/')[0]}.jsonl" if args.shard else "cosmos.jsonl")
         judge = cosmos.CosmosReason(max_calls=args.max_calls, media=args.media)
         if not judge.api_key:
             raise SystemExit("NVIDIA_API_KEY is not set")
-    verdicts = cosmos.run_cosmos(session, segments_path, out, judge, limit=args.limit, kinds=kinds, with_strip=not args.no_strip, log=print)
+    verdicts = cosmos.run_cosmos(session, segments_path, out, judge, limit=args.limit, kinds=kinds, shard=_shard(args.shard), with_strip=not args.no_strip, log=print)
     print(f"{out}: {len(verdicts)} new verdicts" + (f" (dry run, prompts under {session / 'intent' / 'cosmos-dry'})" if args.dry_run else ""))
     return 0
 
@@ -156,7 +163,7 @@ def cmd_tag(args: argparse.Namespace) -> int:
         raise SystemExit("ANTHROPIC_API_KEY is not set; --backend codex uses the Codex CLI, --dry-run prints the prompts without calling")
     if not args.dry_run:
         print(f"backend: {type(judge).__name__} model={getattr(judge, 'model', None) or 'default'}")
-    n = tagger.run_tag(d / "segments.jsonl", d / "cosmos.jsonl", d / "jev.jsonl", d / "tags.jsonl", judge, limit=args.limit, dry_run=args.dry_run, log=print)
+    n = tagger.run_tag(d / "segments.jsonl", d / "cosmos.jsonl", d / "jev.jsonl", d / "tags.jsonl", judge, limit=args.limit, dry_run=args.dry_run, log=print, kinds=set(args.kinds.split(',')) if args.kinds else None)
     print(f"{d / 'tags.jsonl'}: {n} {'prompts shown (dry run)' if args.dry_run else 'new tags'}")
     return 0
 
@@ -218,6 +225,7 @@ def build_parser() -> argparse.ArgumentParser:
     k.add_argument("--max-calls", type=int, default=50, help="spend cap for this run")
     k.add_argument("--media", choices=["auto", "video", "frames"], default="auto")
     k.add_argument("--no-strip", action="store_true", help="send frames only, no skeleton strip")
+    k.add_argument("--shard", help="i/n: every n-th segment from i, into intent/cosmos.shard-i.jsonl (cat the shards into cosmos.jsonl afterwards)")
 
     j = sub.add_parser("jev", help="pass 2a: JEV answers atomic questions over each segment's text state -> intent/jev.jsonl")
     j.add_argument("session")
@@ -227,6 +235,7 @@ def build_parser() -> argparse.ArgumentParser:
     t = sub.add_parser("tag", help="pass 2b: a reasoning model tags each segment and flags the ones a human must see -> intent/tags.jsonl")
     t.add_argument("session")
     t.add_argument("--limit", type=int)
+    t.add_argument("--kinds", help="comma-separated segment kinds to tag (default all)")
     t.add_argument("--dry-run", action="store_true", help="print the prompts, call nothing, write nothing")
     t.add_argument("--max-calls", type=int, default=400, help="spend cap for this run")
     t.add_argument("--backend", choices=["openrouter", "codex", "claude", "fake"], help="default: TAGGER_BACKEND, else openrouter with OPENROUTER_API_KEY, else codex when the CLI is on PATH, else claude with an API key")

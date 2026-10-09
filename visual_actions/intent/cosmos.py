@@ -428,6 +428,7 @@ def run_cosmos(
     judge: Judge,
     limit: int | None = None,
     kinds: Iterable[SegmentKind | str] | None = None,
+    shard: tuple[int, int] | None = None,
     fps: float = FPS,
     with_strip: bool = True,
     log: Callable[[str], None] | None = None,
@@ -441,6 +442,8 @@ def run_cosmos(
     wanted = {SegmentKind(k) for k in kinds} if kinds else None
     done = set(by_id(read_jsonl(out_path, CosmosVerdict)))
     todo = [s for s in read_jsonl(segments_path, Segment) if (wanted is None or s.kind in wanted) and s.segment_id not in done]
+    if shard is not None:  # shard i of n takes every n-th segment; shards write their own files and are merged later
+        todo = [s for k, s in enumerate(todo) if k % shard[1] == shard[0]]
     if limit is not None:
         todo = todo[:limit]
     index = clips.VideoIndex.load(session_dir) if todo else None
