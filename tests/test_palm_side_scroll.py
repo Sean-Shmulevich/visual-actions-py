@@ -3,8 +3,8 @@
 from visual_actions.core.automation import Rect, WindowInfo
 from visual_actions.core.config import default_config
 from visual_actions.core.dispatcher import Dispatcher
-from visual_actions.core.events import ActionFired, Bus, HandSeen, Tick
-from visual_actions.core.modes import ARMED
+from visual_actions.core.events import Bus, HandSeen, ModeChanged, Tick
+from visual_actions.core.modes import ARMED, SCROLL
 from visual_actions.core.normalize import to_user_frame
 from visual_actions.core.pipeline import Pipeline
 from visual_actions.core.recognizer import OPEN_PALM, PALM_SIDE, RuleRecognizer
@@ -23,11 +23,11 @@ def test_rule_tells_the_edge_on_hand_from_the_open_palm():
     assert r.classify(palm)[0] == OPEN_PALM
 
 
-def test_edge_on_hand_never_arms_the_menu_and_scrolls_once_armed():
+def test_scroll_hand_never_arms_the_menu_and_stick_scrolls_once_armed():
     cfg = default_config()
     bus = Bus()
-    fired = []
-    bus.subscribe(ActionFired, fired.append)
+    modes = []
+    bus.subscribe(ModeChanged, modes.append)
     mock = MockAutomation(windows=[WindowInfo(1, 1, "App", "Big", Rect(0, 0, 1440, 900))], screen=(1440, 900))
     pipe = Pipeline(bus, cfg, Dispatcher(bus, mock))
     t = 0.0
@@ -35,28 +35,53 @@ def test_edge_on_hand_never_arms_the_menu_and_scrolls_once_armed():
         bus.publish(HandSeen(hand_frame("palm_side", int(t * S), center=(0.5, 0.5))))
         bus.publish(Tick(int(t * S)))
         t += 1 / 30
-    assert pipe.engine.state == "idle" and not fired
+    assert pipe.engine.state == "idle"
     for _ in range(75):  # arm with the open palm
         bus.publish(HandSeen(hand_frame("open_palm", int(t * S), center=(0.5, 0.5))))
         bus.publish(Tick(int(t * S)))
         t += 1 / 30
     assert pipe.engine.state == ARMED
-    for _ in range(15):  # the scroll hand arrives and holds still: that is where the slide anchors
+    for _ in range(15):  # the scroll hand arrives and holds still: the scroll starts here
         bus.publish(HandSeen(hand_frame("palm_side", int(t * S), center=(0.5, 0.5))))
         bus.publish(Tick(int(t * S)))
         t += 1 / 30
-    y = 0.5
-    for k in range(60):  # then rises 0.3 of the frame over two seconds
-        y = 0.5 - 0.3 * k / 59
-        bus.publish(HandSeen(hand_frame("palm_side", int(t * S), center=(0.5, y))))
+    assert pipe.engine.state == SCROLL and pipe.scroll.active
+    for _ in range(45):  # held 0.15 above the anchor for 1.5 s: continuous scrolling up
+        bus.publish(HandSeen(hand_frame("palm_side", int(t * S), center=(0.5, 0.35))))
         bus.publish(Tick(int(t * S)))
         t += 1 / 30
-    ups = [f for f in fired if f.action.name == "Scroll up"]
-    assert len(ups) >= 3 and all(f.ok for f in ups)
-    assert [c for c in mock.calls if c[0] == "scroll"][0] == ("scroll", 0, 3)
-    for k in range(60):  # and back down
-        bus.publish(HandSeen(hand_frame("palm_side", int(t * S), center=(0.5, 0.2 + 0.3 * k / 59))))
+    ups = [c for c in mock.calls if c[0] == "scroll"]
+    assert len(ups) >= 10 and all(c[2] > 0 for c in ups)
+    before = len(mock.calls)
+    for _ in range(30):  # back at the anchor: nothing
+        bus.publish(HandSeen(hand_frame("palm_side", int(t * S), center=(0.5, 0.5))))
         bus.publish(Tick(int(t * S)))
         t += 1 / 30
-    assert any(f.action.name == "Scroll down" for f in fired)
-    assert pipe.engine.state == ARMED  # scrolling keeps the menu open
+    assert len(mock.calls) == before
+    for _ in range(30):  # below: scrolling down
+        bus.publish(HandSeen(hand_frame("palm_side", int(t * S), center=(0.5, 0.7))))
+        bus.publish(Tick(int(t * S)))
+        t += 1 / 30
+    assert any(c[0] == "scroll" and c[2] < 0 for c in mock.calls[before:])
+    for _ in range(20):  # the shape changes: scroll ends, menu stays open
+        bus.publish(HandSeen(hand_frame("open_palm", int(t * S), center=(0.5, 0.5))))
+        bus.publish(Tick(int(t * S)))
+        t += 1 / 30
+    assert pipe.engine.state == ARMED and not pipe.scroll.active
+
+
+def test_stick_velocity_curve():
+    from visual_actions.core.pointer import PointerMap, ReachBox
+    from visual_actions.core.scroll import ScrollController
+
+    sent = []
+    c = ScrollController(Bus(), lambda dx, dy: sent.append(dy), PointerMap(1000, 1000, ReachBox(0, 1, 0, 1)), deadzone=0.03, span=0.25, max_lines_s=90, curve=1.5)
+    assert c.velocity_for(0.0) == 0.0 and c.velocity_for(0.02) == 0.0 and c.velocity_for(-0.02) == 0.0
+    assert c.velocity_for(-0.25) == 90.0 and c.velocity_for(0.25) == -90.0  # hand up = scroll up
+    assert 0 < c.velocity_for(-0.1) < c.velocity_for(-0.2) < 90
+    c.start(0, 0.5, 0.5)
+    for k in range(1, 31):
+        c.update(int(k * S / 30), 0.5, 0.25)  # full speed for one second
+    assert 80 <= sum(sent) <= 90
+    c.end(S)
+    assert not c.active and c.total_lines == sum(sent)

@@ -22,7 +22,7 @@ def test_default_bindings():
     a = b.lookup("window", "h_left")
     assert a is not None and a.kind is ActionKind.KEY and a.arg("chord") == "cmd+shift+["
     assert b.lookup("window", "h_right").name == "Next tab" and b.lookup("window", "h_right").arg("repeat") == "True"
-    assert b.lookup("window", "palm_side:up").kind is ActionKind.SCROLL and b.lookup("window", "palm_side:down").arg("dy") == "-3"
+    assert b.lookup("window", "palm_side").kind is ActionKind.SCROLL and b.lookup("window", "palm_side").arg("mode") == "stick"
     assert b.lookup("window", "point_up") is None  # a slide shape never fires on sight
     assert b.lookup("window", "point_up:left").arg("chord") == "ctrl+left"
     assert parse_chord(b.lookup("window", "point_up:right").arg("chord")).key == "right"

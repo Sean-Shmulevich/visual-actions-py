@@ -25,7 +25,8 @@ from AppKit import (
 
 from ..core.drag import DragEvent, DragPhase
 from ..core.events import Bus, ModeChanged, PointerMoved, SnapPreview, Tick
-from ..core.modes import ARMED, DRAGGING
+from ..core.modes import ARMED, DRAGGING, SCROLL
+from ..core.scroll import ScrollEvent, ScrollPhase
 
 CURSOR_SIZE = 26
 
@@ -106,7 +107,11 @@ class CursorOverlay:
         self.frame.setContentView_(FrameView.alloc().initWithFrame_(NSMakeRect(0, 0, screen.size.width, screen.size.height)))
         self.preview = _panel(0, 0, 10, 10, level_offset=1)
         self.preview.setContentView_(PreviewView.alloc().initWithFrame_(NSMakeRect(0, 0, 10, 10)))
+        self.anchor = _panel(0, 0, CURSOR_SIZE, CURSOR_SIZE, level_offset=2)  # the sticky scroll anchor
+        self.anchor_view = CursorView.alloc().initWithFrame_(NSMakeRect(0, 0, CURSOR_SIZE, CURSOR_SIZE))
+        self.anchor.setContentView_(self.anchor_view)
         self.mode = "idle"
+        bus.subscribe(ScrollEvent, self._on_scroll)
         bus.subscribe(PointerMoved, self._on_pointer)
         bus.subscribe(ModeChanged, self._on_mode)
         bus.subscribe(SnapPreview, self._on_snap)
@@ -115,13 +120,15 @@ class CursorOverlay:
 
     def close(self) -> None:
         """Hide every panel; the app drops the bus this overlay listens on when it rebuilds from a new config."""
-        for panel in (self.cursor, self.frame, self.preview):
+        for panel in (self.cursor, self.frame, self.preview, self.anchor):
             if panel.isVisible():
                 panel.orderOut_(None)
 
     def _on_mode(self, ev: ModeChanged) -> None:
         self.mode = ev.new
-        if ev.new not in (ARMED, DRAGGING):
+        if ev.new != SCROLL and self.anchor.isVisible():
+            self.anchor.orderOut_(None)
+        if ev.new not in (ARMED, DRAGGING, SCROLL):
             if self.cursor.isVisible():
                 self.cursor.orderOut_(None)
             if self.frame.isVisible():
@@ -150,6 +157,20 @@ class CursorOverlay:
         if not self.cursor.isVisible():
             self.cursor.orderFrontRegardless()
         self.cursor_view.setNeedsDisplay_(True)
+
+    def _on_scroll(self, ev: ScrollEvent) -> None:
+        if ev.phase is ScrollPhase.END:
+            for panel in (self.anchor, self.cursor):
+                if panel.isVisible():
+                    panel.orderOut_(None)
+            return
+        if ev.phase is ScrollPhase.START:
+            self.anchor_view.filled = False
+            self.anchor.setFrameOrigin_((ev.ax - CURSOR_SIZE / 2, self.screen_h - ev.ay - CURSOR_SIZE / 2))
+            if not self.anchor.isVisible():
+                self.anchor.orderFrontRegardless()
+            self.anchor_view.setNeedsDisplay_(True)
+        self._show(ev.x, ev.y, filled=True)
 
     def _on_pointer(self, ev: PointerMoved) -> None:
         if self.mode == DRAGGING:

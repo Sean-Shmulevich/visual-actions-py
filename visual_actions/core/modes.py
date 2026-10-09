@@ -44,6 +44,10 @@ ARMED   --pinch START, namespace binds pinch_right/pinch_left--> ADJUST(anchor =
 ADJUST  --until the pinch holds still adjust_settle--> nothing (transition pinches move, never settle)
 ADJUST  --pinch MOVE, user's right/left by adjust_step--> fire pinch_right / pinch_left, anchor moves one step
 ADJUST  --pinch END----------------------> ARMED (chaining) / IDLE
+ARMED   --scroll shape (a binding of kind scroll with mode "stick"), still--> SCROLL(anchor = wrist)
+SCROLL  --hand frames---------------------> the ScrollController scrolls by the wrist's offset from the anchor
+SCROLL  --two tokens of another shape----> ARMED (fresh timeout)
+SCROLL  --hand lost / fist---------------> scroll ends; ARMED (lost, keeps its deadline) / IDLE (fist)
 ANY     --fist token (conf >= 0.6)-------> IDLE   (always; a drag is dropped in place)
 HOLDING --hand lost--------------------> IDLE at once (hold_lost_grace 0, STRICT: the palm is continuous),
                                            else the hold pauses and drops after hold_lost_grace
@@ -67,9 +71,10 @@ from .drag import DragController
 from .events import Bus, HoldProgress, ModeChanged
 from .pinch import PinchEvent, PinchPhase
 from .recognizer import FIST, OPEN_PALM
+from .scroll import ScrollController
 from .types import Action, Token
 
-IDLE, HOLDING, ARMED, DRAGGING, REPEAT, ADJUST = "idle", "holding", "armed", "dragging", "repeat", "adjust"
+IDLE, HOLDING, ARMED, DRAGGING, REPEAT, ADJUST, SCROLL = "idle", "holding", "armed", "dragging", "repeat", "adjust", "scroll"
 PINCH_RIGHT, PINCH_LEFT = "pinch_right", "pinch_left"  # binding names for sideways pinch travel (user's right / left)
 
 
@@ -118,7 +123,11 @@ class ModeEngine:
         fist_min_confidence: float = 0.6,
         leaders: dict[str, str] | None = None,
         drag_namespace: str = "window",
+        scroll: ScrollController | None = None,
     ) -> None:
+        self.scroll = scroll
+        self._scroll_shape: str | None = None
+        self._scroll_gap = 0
         self.fist_min_confidence = fist_min_confidence
         # leader gesture -> namespace it opens; open_palm alone keeps the single-mode behavior
         self.leaders = dict(leaders) if leaders else {OPEN_PALM: default_namespace}
@@ -183,7 +192,17 @@ class ModeEngine:
             # A fist always ends whatever is happening: hold, armed window, repeat, or a drag (dropped in place).
             if self.state == DRAGGING and self.drag is not None:
                 self.drag.cancel(tok.t_ns)
+            if self.state == SCROLL and self.scroll is not None:
+                self.scroll.end(tok.t_ns)
             self._go(IDLE, tok.t_ns)
+            return
+        if self.state == SCROLL:
+            if tok.name == self._scroll_shape:
+                self._scroll_gap = 0
+            else:
+                self._scroll_gap += 1
+                if self._scroll_gap >= 2:
+                    self._end_scroll(tok.t_ns)
             return
         if self.state == ADJUST:
             return  # per-frame pinch events own this state
@@ -241,6 +260,8 @@ class ModeEngine:
                 self.bus.publish(ModeChanged(tok.t_ns, ARMED, ARMED, self.namespace, self._deadline_ns))
                 return
             if self._slide(tok):
+                return
+            if self._start_scroll(tok):
                 return
             if tok.name == self.leader and not self._leader_released:
                 self._release_tokens = 0
@@ -482,6 +503,31 @@ class ModeEngine:
         self._slide_shape = None
         self._go(ARMED, t_ns)
 
+    def _start_scroll(self, tok: Token) -> bool:
+        """ARMED: a still scroll shape (binding of kind scroll, mode stick) starts a stick scroll."""
+        if self.scroll is None:
+            return False
+        action = self.bindings.lookup(self.namespace or self.default_namespace, tok.name)
+        if action is None or action.kind.value != "scroll" or action.arg("mode") != "stick":
+            return False
+        if tok.confidence < self.min_token_confidence or not tok.still:
+            return True  # the shape, but not settled yet: nothing else may fire on it
+        self._scroll_shape, self._scroll_gap = tok.name, 0
+        self.scroll.start(tok.t_ns, tok.x, tok.y)
+        self._go(SCROLL, tok.t_ns)
+        return True
+
+    def _end_scroll(self, t_ns: int) -> None:
+        if self.scroll is not None:
+            self.scroll.end(t_ns)
+        self._scroll_shape = None
+        self._after_command(t_ns, None)
+
+    def on_hand_position(self, t_ns: int, x: float, y: float) -> None:
+        """Per frame while scrolling: the wrist in the user frame."""
+        if self.state == SCROLL and self.scroll is not None:
+            self.scroll.update(t_ns, x, y)
+
     def on_release_at_loss(self, t_ns: int) -> None:
         """The pinch was opening when the hand left the frame and it has not come straight
         back: the person released and pulled away. The window is dropped where it is (no snap:
@@ -504,6 +550,8 @@ class ModeEngine:
         self._last_token = None
         self._idle_block = None  # the hand left: whatever it shows next is a fresh start
         self._slide_shape = None  # a slide re-anchors when the hand is back
+        if self.state == SCROLL:
+            self._end_scroll(t_ns)  # back to the menu, which then keeps its own deadline across the loss
         if self.state == ARMED:
             self._leader_released = True  # came back within escape_lost: the leader shape is now a command
             self._fired_block = None  # and so is the shape that fired last
@@ -584,6 +632,7 @@ class ModeEngine:
             self._returned_at_ns = None
             self._refresh_on_return = False
             self._slide_shape = None
+            self._scroll_shape = None
         self.bus.publish(
             ModeChanged(t_ns=t_ns, old=old, new=new, namespace=self.namespace, deadline_ns=self._deadline_ns)
         )

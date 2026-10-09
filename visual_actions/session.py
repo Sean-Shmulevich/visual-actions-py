@@ -31,6 +31,7 @@ from typing import Any
 
 from .core.config import Config, save_config
 from .core.drag import DragEvent, DragPhase
+from .core.scroll import ScrollEvent, ScrollPhase
 from .core.events import (
     ActionFired,
     Bus,
@@ -121,6 +122,7 @@ class SessionRecorder:
             bus.subscribe(ActionFired, self._on_action)
             bus.subscribe(DragEvent, self._on_drag)
             bus.subscribe(SnapPreview, self._on_snap)
+            bus.subscribe(ScrollEvent, self._on_scroll)
             bus.subscribe(HandLost, self._on_hand_lost)
             bus.subscribe(HandSeen, self._on_hand_seen)
             bus.subscribe(PalmVetoed, lambda e: self.log("veto", f"palm on face: overlap={e.overlap:.2f} spread={e.spread:.2f}", e.t_ns))
@@ -215,6 +217,12 @@ class SessionRecorder:
             hf = ev.hand_frame
             self.log("hand", f"seen{gap} conf={hf.confidence:.2f} wrist=({hf.landmarks[0].x:.2f},{hf.landmarks[0].y:.2f}) (mode {self.mode})", hf.t_ns)
         self._hand_present = True
+
+    def _on_scroll(self, ev: ScrollEvent) -> None:
+        if ev.phase is ScrollPhase.START:
+            self.log("scroll", f"start anchor=({ev.ax:.0f},{ev.ay:.0f})", ev.t_ns)
+        elif ev.phase is ScrollPhase.END:
+            self.log("scroll", f"end lines={ev.lines}", ev.t_ns)
 
     def _on_snap(self, ev: SnapPreview) -> None:
         self.log("snap", f"preview {ev.zone}" if ev.zone else "preview cleared", ev.t_ns)

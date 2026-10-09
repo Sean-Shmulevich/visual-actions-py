@@ -8,7 +8,7 @@ from .config import Config
 from .dispatcher import Dispatcher
 from .drag import DragController, WindowMover
 from .events import Bus, HandLost, HandSeen, PalmVetoed, PointerMoved, Tick, TokenEmitted
-from .modes import ARMED, DRAGGING, ModeEngine
+from .modes import ARMED, DRAGGING, SCROLL, ModeEngine
 from .normalize import to_user_frame
 from .pinch import PinchDetector
 from .pointer import PointerMap, ReachBox, SmoothedPointer
@@ -24,8 +24,9 @@ from .recognizer import (
     Smoother,
     tip_spread,
 )
+from .scroll import ScrollController
 from .snap import SnapEngine, SnapRules
-from .types import Action
+from .types import WRIST, Action
 
 
 class Pipeline:
@@ -87,6 +88,16 @@ class Pipeline:
             if d.enabled
             else None
         )
+        sc = config.scroll
+        self.scroll = ScrollController(
+            bus,
+            dispatcher.automation.scroll,
+            pointer.pmap,
+            deadzone=sc.deadzone,
+            span=sc.span,
+            max_lines_s=sc.max_lines_s,
+            curve=sc.curve,
+        )
         self.engine = ModeEngine(
             bus=bus,
             bindings=bindings if bindings is not None else config.bindings(),
@@ -96,6 +107,7 @@ class Pipeline:
             min_token_confidence=config.recognizer.min_token_confidence,
             drag=self.drag,
             leaders=config.leaders(),
+            scroll=self.scroll,
         )
         self._last_veto_ns = -(10**18)
         self._lost_at_ns: int | None = None  # a HandLost not yet applied to the smoother and pinch detector
@@ -126,6 +138,9 @@ class Pipeline:
         pev = self.pinch.update(hf)
         if pev is not None:
             self.engine.on_pinch(pev)
+        if self.engine.state == SCROLL:
+            w = hf.landmarks[WRIST]
+            self.engine.on_hand_position(hf.t_ns, w.x, w.y)
         if self.drag is not None and (
             self.engine.state == DRAGGING or (self.engine.state == ARMED and self.engine.drag_allowed)
         ):

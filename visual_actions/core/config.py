@@ -151,6 +151,16 @@ class DragConfig:
 
 
 @dataclass
+class ScrollConfig:
+    """Stick scrolling with the scroll hand (core/scroll.py): offsets are fractions of frame height."""
+
+    deadzone: float = 0.03  # hand within this of the anchor: no scroll
+    span: float = 0.25  # offset at which the speed reaches max_lines_s
+    max_lines_s: float = 90.0  # top speed, lines per second
+    curve: float = 1.5  # speed curve exponent: 1 = linear, higher = gentler near the anchor
+
+
+@dataclass
 class PresenceConfig:
     lost_frames: int = 3  # consecutive frames without a usable hand before it is declared lost
     # Fast-exit predictor (core/presence.py): declare the hand lost at once, skipping the
@@ -198,6 +208,7 @@ class Config:
     leader: LeaderConfig = field(default_factory=LeaderConfig)
     presence: PresenceConfig = field(default_factory=PresenceConfig)
     learn: LearnConfig = field(default_factory=LearnConfig)
+    scroll: ScrollConfig = field(default_factory=ScrollConfig)
     namespaces: dict[str, NamespaceConfig] = field(default_factory=dict)
 
     def leaders(self) -> dict[str, str]:
@@ -218,11 +229,10 @@ class Config:
 DEFAULT_BINDINGS: list[dict[str, Any]] = [
     {"gesture": "h_left", "action": {"kind": "key", "name": "Previous tab", "chord": "cmd+shift+[", "repeat": True}},
     {"gesture": "h_right", "action": {"kind": "key", "name": "Next tab", "chord": "cmd+shift+]", "repeat": True}},
-    # The scroll hand: right hand turned edge-on to the camera, fingers together pointing sideways,
-    # arm roughly horizontal. Moving it up or down scrolls the active window, one scroll per 6 % of
-    # frame height (the binding's own step), chaining. It is a slide shape: it never fires on sight.
-    {"gesture": "palm_side:up", "action": {"kind": "scroll", "name": "Scroll up", "dy": 3, "step": 0.06}},
-    {"gesture": "palm_side:down", "action": {"kind": "scroll", "name": "Scroll down", "dy": -3, "step": 0.06}},
+    # The scroll hand: a flat hand, fingers together pointing sideways, raised and held still. It
+    # starts a stick scroll where it is (a sticky dot marks the spot); the hand's offset above or
+    # below that spot sets the scroll speed. Lower the hand or change the shape to stop.
+    {"gesture": "palm_side", "action": {"kind": "scroll", "name": "Scroll", "mode": "stick"}},
     # One finger up is a slide shape: it never fires on sight; sliding it sideways by repeat_slide
     # switches desktops one step per slide (Mission Control's Ctrl+Arrow, posted with the fn flags).
     # A flick: out to one side and back to where it started is one switch; the return stroke is not
@@ -286,6 +296,7 @@ def load_config(path: Path | None) -> Config:
     _merge(cfg.leader, data.get("leader", {}))
     _merge(cfg.presence, data.get("presence", {}))
     _merge(cfg.learn, data.get("learn", {}))
+    _merge(cfg.scroll, data.get("scroll", {}))
     if "namespaces" in data:
         # User bindings override defaults per gesture; default bindings the file does not
         # mention are kept, so a config saved before a gesture existed still gets it.
