@@ -1,0 +1,944 @@
+{
+  "classifier": {
+    "by_class": {
+      "fist": 3409,
+      "h_left": 1779,
+      "h_right": 1702,
+      "none": 3466,
+      "open_palm": 4382,
+      "pinch": 2380,
+      "point_up": 3087,
+      "thumbs_down": 2000,
+      "thumbs_up": 2000,
+      "two_up": 3180
+    },
+    "by_source": {
+      "public": 16160,
+      "review": 1439,
+      "user": 9786
+    },
+    "files": [
+      {
+        "file": "fist/20261008-001521.jsonl",
+        "frames": 897,
+        "sha256": "d4dff1c2ffeabf9e",
+        "source": "user"
+      },
+      {
+        "file": "fist/20261008-002441.jsonl",
+        "frames": 491,
+        "sha256": "bb3b47636d2386d0",
+        "source": "user"
+      },
+      {
+        "file": "fist/public-hagrid_hf.jsonl",
+        "frames": 21,
+        "sha256": "76b5618b772dbcbe",
+        "source": "public"
+      },
+      {
+        "file": "fist/public-hagrid_v2.jsonl",
+        "frames": 2000,
+        "sha256": "89ce5a40e439de37",
+        "source": "public"
+      },
+      {
+        "file": "h_left/20261008-001521.jsonl",
+        "frames": 898,
+        "sha256": "342f7922d9c1d3eb",
+        "source": "user"
+      },
+      {
+        "file": "h_left/20261008-002441.jsonl",
+        "frames": 870,
+        "sha256": "db800be09a16944f",
+        "source": "user"
+      },
+      {
+        "file": "h_left/review-20261008-220415-20261009-163616.jsonl",
+        "frames": 11,
+        "sha256": "99169bca51fc2a2d",
+        "source": "review"
+      },
+      {
+        "file": "h_right/20261008-001521.jsonl",
+        "frames": 854,
+        "sha256": "59e28e712745da71",
+        "source": "user"
+      },
+      {
+        "file": "h_right/20261008-002441.jsonl",
+        "frames": 848,
+        "sha256": "b1d32ed6be315da3",
+        "source": "user"
+      },
+      {
+        "file": "none/20261008-001521.jsonl",
+        "frames": 207,
+        "sha256": "1571ebceb69ea279",
+        "source": "user"
+      },
+      {
+        "file": "none/20261008-002441.jsonl",
+        "frames": 1194,
+        "sha256": "bd76492b9c83d47a",
+        "source": "user"
+      },
+      {
+        "file": "none/public-hagrid_hf.jsonl",
+        "frames": 65,
+        "sha256": "902b78bfdc863dab",
+        "source": "public"
+      },
+      {
+        "file": "none/public-hagrid_v2.jsonl",
+        "frames": 2000,
+        "sha256": "f8b80666a32ea711",
+        "source": "public"
+      },
+      {
+        "file": "open_palm/20261008-001521.jsonl",
+        "frames": 893,
+        "sha256": "8db1669708811274",
+        "source": "user"
+      },
+      {
+        "file": "open_palm/20261008-002441.jsonl",
+        "frames": 841,
+        "sha256": "d5a7ef5b5680be14",
+        "source": "user"
+      },
+      {
+        "file": "open_palm/public-hagrid_hf.jsonl",
+        "frames": 12,
+        "sha256": "42399b6ba8d400f4",
+        "source": "public"
+      },
+      {
+        "file": "open_palm/public-hagrid_v2.jsonl",
+        "frames": 2000,
+        "sha256": "b731704de655fd02",
+        "source": "public"
+      },
+      {
+        "file": "open_palm/review-20261008-165532-20261009-163614.jsonl",
+        "frames": 26,
+        "sha256": "3ec9b0b608ec1f67",
+        "source": "review"
+      },
+      {
+        "file": "open_palm/review-20261008-171654-20261009-163614.jsonl",
+        "frames": 60,
+        "sha256": "e09ad76c9e9abab8",
+        "source": "review"
+      },
+      {
+        "file": "open_palm/review-20261008-173122-20261009-163614.jsonl",
+        "frames": 23,
+        "sha256": "396faca8a4ccea61",
+        "source": "review"
+      },
+      {
+        "file": "open_palm/review-20261008-174114-20261009-163615.jsonl",
+        "frames": 183,
+        "sha256": "86e8ecb547211d25",
+        "source": "review"
+      },
+      {
+        "file": "open_palm/review-20261008-180448-20261009-163615.jsonl",
+        "frames": 34,
+        "sha256": "bb2a6b3b02d6c1a2",
+        "source": "review"
+      },
+      {
+        "file": "open_palm/review-20261008-184108-20261009-163616.jsonl",
+        "frames": 34,
+        "sha256": "9ed627189262da23",
+        "source": "review"
+      },
+      {
+        "file": "open_palm/review-20261008-191424-20261009-163616.jsonl",
+        "frames": 43,
+        "sha256": "23801c81ebb09563",
+        "source": "review"
+      },
+      {
+        "file": "open_palm/review-20261008-220415-20261009-163616.jsonl",
+        "frames": 90,
+        "sha256": "d2b2255b3561538d",
+        "source": "review"
+      },
+      {
+        "file": "open_palm/review-20261008-231252-20261009-163617.jsonl",
+        "frames": 93,
+        "sha256": "08c8995a05251489",
+        "source": "review"
+      },
+      {
+        "file": "open_palm/review-20261009-101425-20261009-163619.jsonl",
+        "frames": 35,
+        "sha256": "e90bfe4409fcfe77",
+        "source": "review"
+      },
+      {
+        "file": "open_palm/review-20261009-120535-20261009-163619.jsonl",
+        "frames": 15,
+        "sha256": "aba6997d9d087947",
+        "source": "review"
+      },
+      {
+        "file": "pinch/public-hagrid_hf.jsonl",
+        "frames": 14,
+        "sha256": "a841aeacaf07303f",
+        "source": "public"
+      },
+      {
+        "file": "pinch/public-hagrid_v2.jsonl",
+        "frames": 2000,
+        "sha256": "71d3ff128a9a2282",
+        "source": "public"
+      },
+      {
+        "file": "pinch/review-20261008-181917-20261009-163615.jsonl",
+        "frames": 37,
+        "sha256": "72e36a81ab4a3cc5",
+        "source": "review"
+      },
+      {
+        "file": "pinch/review-20261008-191424-20261009-163616.jsonl",
+        "frames": 22,
+        "sha256": "c858a439bc80814a",
+        "source": "review"
+      },
+      {
+        "file": "pinch/review-20261008-220415-20261009-163616.jsonl",
+        "frames": 11,
+        "sha256": "3e56311036127b7c",
+        "source": "review"
+      },
+      {
+        "file": "pinch/review-20261008-231252-20261009-163617.jsonl",
+        "frames": 87,
+        "sha256": "9531649a2a5bd18d",
+        "source": "review"
+      },
+      {
+        "file": "pinch/review-20261009-101425-20261009-163619.jsonl",
+        "frames": 209,
+        "sha256": "e9c47a7968441728",
+        "source": "review"
+      },
+      {
+        "file": "point_up/20261008-011937.jsonl",
+        "frames": 897,
+        "sha256": "ac2a6ab7a76ec756",
+        "source": "user"
+      },
+      {
+        "file": "point_up/public-hagrid_hf.jsonl",
+        "frames": 13,
+        "sha256": "b529e4a51db2d43a",
+        "source": "public"
+      },
+      {
+        "file": "point_up/public-hagrid_v2.jsonl",
+        "frames": 2000,
+        "sha256": "b42aa2c0b9327b7e",
+        "source": "public"
+      },
+      {
+        "file": "point_up/review-20261008-174114-20261009-163615.jsonl",
+        "frames": 74,
+        "sha256": "437cb9a6e76f3356",
+        "source": "review"
+      },
+      {
+        "file": "point_up/review-20261008-184108-20261009-163616.jsonl",
+        "frames": 11,
+        "sha256": "2a8ab6ff5ff1a092",
+        "source": "review"
+      },
+      {
+        "file": "point_up/review-20261008-220415-20261009-163616.jsonl",
+        "frames": 11,
+        "sha256": "1760d9c37783f7ca",
+        "source": "review"
+      },
+      {
+        "file": "point_up/review-20261008-231252-20261009-163617.jsonl",
+        "frames": 60,
+        "sha256": "c3edcd016f1bee58",
+        "source": "review"
+      },
+      {
+        "file": "point_up/review-20261009-101425-20261009-163619.jsonl",
+        "frames": 21,
+        "sha256": "7dc0f12fe659a159",
+        "source": "review"
+      },
+      {
+        "file": "thumbs_down/public-hagrid_v2.jsonl",
+        "frames": 2000,
+        "sha256": "8b1d0138846fbea7",
+        "source": "public"
+      },
+      {
+        "file": "thumbs_up/public-hagrid_v2.jsonl",
+        "frames": 2000,
+        "sha256": "c562896d6ec2e71e",
+        "source": "public"
+      },
+      {
+        "file": "two_up/20261008-011937.jsonl",
+        "frames": 896,
+        "sha256": "36064b8a5ba90219",
+        "source": "user"
+      },
+      {
+        "file": "two_up/public-hagrid_hf.jsonl",
+        "frames": 35,
+        "sha256": "f3291967d3b4438e",
+        "source": "public"
+      },
+      {
+        "file": "two_up/public-hagrid_v2.jsonl",
+        "frames": 2000,
+        "sha256": "3e0ceff1509a1320",
+        "source": "public"
+      },
+      {
+        "file": "two_up/review-20261008-174114-20261009-163615.jsonl",
+        "frames": 12,
+        "sha256": "ddc35abd8a41d8ec",
+        "source": "review"
+      },
+      {
+        "file": "two_up/review-20261008-181917-20261009-163615.jsonl",
+        "frames": 12,
+        "sha256": "68948beb6b8e9fac",
+        "source": "review"
+      },
+      {
+        "file": "two_up/review-20261008-184108-20261009-163616.jsonl",
+        "frames": 57,
+        "sha256": "7d8726ea418c8454",
+        "source": "review"
+      },
+      {
+        "file": "two_up/review-20261008-191424-20261009-163616.jsonl",
+        "frames": 12,
+        "sha256": "1cc43914b2ce9189",
+        "source": "review"
+      },
+      {
+        "file": "two_up/review-20261008-220415-20261009-163616.jsonl",
+        "frames": 24,
+        "sha256": "10d1f2a6235384de",
+        "source": "review"
+      },
+      {
+        "file": "two_up/review-20261008-231252-20261009-163617.jsonl",
+        "frames": 108,
+        "sha256": "abb36a51856dbda5",
+        "source": "review"
+      },
+      {
+        "file": "two_up/review-20261009-101425-20261009-163619.jsonl",
+        "frames": 24,
+        "sha256": "eaf3b8a970cd16aa",
+        "source": "review"
+      }
+    ],
+    "frames": 27385,
+    "heldout": {
+      "accuracy": 0.6633,
+      "by_class": {
+        "fist": 491,
+        "h_left": 11,
+        "h_right": 848,
+        "none": 1194,
+        "open_palm": 15,
+        "pinch": 209,
+        "point_up": 21,
+        "two_up": 24
+      },
+      "confusion": {
+        "fist": {
+          "fist": 260,
+          "h_left": 23,
+          "none": 5,
+          "open_palm": 6,
+          "pinch": 1,
+          "thumbs_down": 110,
+          "thumbs_up": 86
+        },
+        "h_left": {
+          "h_left": 11
+        },
+        "h_right": {
+          "h_right": 778,
+          "none": 62,
+          "pinch": 5,
+          "thumbs_down": 3
+        },
+        "none": {
+          "fist": 11,
+          "h_left": 440,
+          "none": 552,
+          "open_palm": 11,
+          "point_up": 111,
+          "thumbs_down": 1,
+          "thumbs_up": 49,
+          "two_up": 19
+        },
+        "open_palm": {
+          "open_palm": 15
+        },
+        "pinch": {
+          "open_palm": 4,
+          "pinch": 205
+        },
+        "point_up": {
+          "point_up": 21
+        },
+        "two_up": {
+          "two_up": 24
+        }
+      },
+      "fist_recall": 0.5295,
+      "frames": 2813,
+      "groups": [
+        "fist/20261008-002441.jsonl",
+        "h_left/review-20261008-220415-20261009-163616.jsonl",
+        "h_right/20261008-002441.jsonl",
+        "none/20261008-002441.jsonl",
+        "open_palm/review-20261009-120535-20261009-163619.jsonl",
+        "pinch/review-20261009-101425-20261009-163619.jsonl",
+        "point_up/review-20261009-101425-20261009-163619.jsonl",
+        "two_up/review-20261009-101425-20261009-163619.jsonl"
+      ],
+      "per_class": {
+        "fist": {
+          "accuracy": 0.5295,
+          "n": 491,
+          "precision": 0.9594
+        },
+        "h_left": {
+          "accuracy": 1.0,
+          "n": 11,
+          "precision": 0.0232
+        },
+        "h_right": {
+          "accuracy": 0.9175,
+          "n": 848,
+          "precision": 1.0
+        },
+        "none": {
+          "accuracy": 0.4623,
+          "n": 1194,
+          "precision": 0.8918
+        },
+        "open_palm": {
+          "accuracy": 1.0,
+          "n": 15,
+          "precision": 0.4167
+        },
+        "pinch": {
+          "accuracy": 0.9809,
+          "n": 209,
+          "precision": 0.9716
+        },
+        "point_up": {
+          "accuracy": 1.0,
+          "n": 21,
+          "precision": 0.1591
+        },
+        "two_up": {
+          "accuracy": 1.0,
+          "n": 24,
+          "precision": 0.5581
+        }
+      },
+      "protocol": "newest user session per class (public / synth files train only)",
+      "top_confusions": [
+        {
+          "n": 440,
+          "pred": "h_left",
+          "true": "none"
+        },
+        {
+          "n": 111,
+          "pred": "point_up",
+          "true": "none"
+        },
+        {
+          "n": 110,
+          "pred": "thumbs_down",
+          "true": "fist"
+        },
+        {
+          "n": 86,
+          "pred": "thumbs_up",
+          "true": "fist"
+        },
+        {
+          "n": 62,
+          "pred": "none",
+          "true": "h_right"
+        },
+        {
+          "n": 49,
+          "pred": "thumbs_up",
+          "true": "none"
+        },
+        {
+          "n": 23,
+          "pred": "h_left",
+          "true": "fist"
+        },
+        {
+          "n": 19,
+          "pred": "two_up",
+          "true": "none"
+        }
+      ],
+      "train_frames": 24572
+    },
+    "status": "ok"
+  },
+  "config": {
+    "exists": true,
+    "path": "/Users/shmul/Library/Application Support/visual-actions/config.toml",
+    "profile": "strict",
+    "resolved": "/Users/shmul/Library/Application Support/visual-actions/config.toml",
+    "sha256": "61cff0b2d0905543"
+  },
+  "created_at": "2026-10-09T16:37:18",
+  "date": "2026-10-09",
+  "engine": {
+    "per_session": {
+      "20261009-145832": {
+        "live": {
+          "arms": 6,
+          "broken_hold_ratio": 0.0,
+          "broken_holds": 0,
+          "drag_ends": 0,
+          "drags": 0,
+          "empty_arms": 5,
+          "fires": 2,
+          "fist_cancelled_drags": 0,
+          "hand_losses": 34,
+          "hand_losses_per_min": 3.2353,
+          "misfire_rate": 1.0,
+          "misfire_votes": {
+            "fist_after_fire": 0,
+            "immediate_redo": 1,
+            "low_confidence_trigger": 1,
+            "token_flip_around_fire": 1
+          },
+          "regrabs": 0,
+          "releases_per_drag": null,
+          "seconds": 630.5,
+          "sessions": 1,
+          "weak_intended_fires": 0,
+          "weak_misfire_fires": 2
+        },
+        "replay": {
+          "arms": 5,
+          "broken_hold_ratio": 0.0,
+          "broken_holds": 0,
+          "drag_ends": 0,
+          "drags": 0,
+          "empty_arms": 5,
+          "fires": 0,
+          "fist_cancelled_drags": 0,
+          "hand_losses": 34,
+          "hand_losses_per_min": 3.2353,
+          "misfire_rate": null,
+          "misfire_votes": {
+            "fist_after_fire": 0,
+            "immediate_redo": 0,
+            "low_confidence_trigger": 0,
+            "token_flip_around_fire": 0
+          },
+          "regrabs": 0,
+          "releases_per_drag": null,
+          "seconds": 630.5,
+          "sessions": 1,
+          "weak_intended_fires": 0,
+          "weak_misfire_fires": 0
+        }
+      },
+      "20261009-150908": {
+        "live": {
+          "arms": 12,
+          "broken_hold_ratio": 0.0,
+          "broken_holds": 0,
+          "drag_ends": 6,
+          "drags": 6,
+          "empty_arms": 7,
+          "fires": 15,
+          "fist_cancelled_drags": 1,
+          "hand_losses": 33,
+          "hand_losses_per_min": 4.8363,
+          "misfire_rate": 0.4,
+          "misfire_votes": {
+            "fist_after_fire": 1,
+            "immediate_redo": 0,
+            "low_confidence_trigger": 5,
+            "token_flip_around_fire": 3
+          },
+          "regrabs": 0,
+          "releases_per_drag": 1.0,
+          "seconds": 409.4,
+          "sessions": 1,
+          "weak_intended_fires": 3,
+          "weak_misfire_fires": 6
+        },
+        "replay": {
+          "arms": 13,
+          "broken_hold_ratio": 0.0,
+          "broken_holds": 0,
+          "drag_ends": 4,
+          "drags": 4,
+          "empty_arms": 8,
+          "fires": 34,
+          "fist_cancelled_drags": 1,
+          "hand_losses": 33,
+          "hand_losses_per_min": 4.8363,
+          "misfire_rate": 0.4706,
+          "misfire_votes": {
+            "fist_after_fire": 2,
+            "immediate_redo": 0,
+            "low_confidence_trigger": 14,
+            "token_flip_around_fire": 6
+          },
+          "regrabs": 0,
+          "releases_per_drag": 1.0,
+          "seconds": 409.4,
+          "sessions": 1,
+          "weak_intended_fires": 5,
+          "weak_misfire_fires": 16
+        }
+      },
+      "20261009-151601": {
+        "live": {
+          "arms": 7,
+          "broken_hold_ratio": 0.4615,
+          "broken_holds": 6,
+          "drag_ends": 12,
+          "drags": 12,
+          "empty_arms": 2,
+          "fires": 5,
+          "fist_cancelled_drags": 2,
+          "hand_losses": 24,
+          "hand_losses_per_min": 5.964,
+          "misfire_rate": 0.6,
+          "misfire_votes": {
+            "fist_after_fire": 0,
+            "immediate_redo": 3,
+            "low_confidence_trigger": 0,
+            "token_flip_around_fire": 0
+          },
+          "regrabs": 0,
+          "releases_per_drag": 1.0,
+          "seconds": 241.4,
+          "sessions": 1,
+          "weak_intended_fires": 2,
+          "weak_misfire_fires": 3
+        },
+        "replay": {
+          "arms": 7,
+          "broken_hold_ratio": 0.5333,
+          "broken_holds": 8,
+          "drag_ends": 4,
+          "drags": 4,
+          "empty_arms": 3,
+          "fires": 0,
+          "fist_cancelled_drags": 1,
+          "hand_losses": 24,
+          "hand_losses_per_min": 5.964,
+          "misfire_rate": null,
+          "misfire_votes": {
+            "fist_after_fire": 0,
+            "immediate_redo": 0,
+            "low_confidence_trigger": 0,
+            "token_flip_around_fire": 0
+          },
+          "regrabs": 0,
+          "releases_per_drag": 1.0,
+          "seconds": 241.4,
+          "sessions": 1,
+          "weak_intended_fires": 0,
+          "weak_misfire_fires": 0
+        }
+      },
+      "20261009-152005": {
+        "live": {
+          "arms": 20,
+          "broken_hold_ratio": 0.3333,
+          "broken_holds": 10,
+          "drag_ends": 22,
+          "drags": 22,
+          "empty_arms": 5,
+          "fires": 176,
+          "fist_cancelled_drags": 4,
+          "hand_losses": 143,
+          "hand_losses_per_min": 6.3258,
+          "misfire_rate": 0.4545,
+          "misfire_votes": {
+            "fist_after_fire": 3,
+            "immediate_redo": 6,
+            "low_confidence_trigger": 56,
+            "token_flip_around_fire": 30
+          },
+          "regrabs": 0,
+          "releases_per_drag": 1.0,
+          "seconds": 1356.3,
+          "sessions": 1,
+          "weak_intended_fires": 55,
+          "weak_misfire_fires": 80
+        },
+        "replay": {
+          "arms": 23,
+          "broken_hold_ratio": 0.3611,
+          "broken_holds": 13,
+          "drag_ends": 11,
+          "drags": 11,
+          "empty_arms": 13,
+          "fires": 339,
+          "fist_cancelled_drags": 3,
+          "hand_losses": 143,
+          "hand_losses_per_min": 6.3258,
+          "misfire_rate": 0.472,
+          "misfire_votes": {
+            "fist_after_fire": 3,
+            "immediate_redo": 8,
+            "low_confidence_trigger": 124,
+            "token_flip_around_fire": 55
+          },
+          "regrabs": 0,
+          "releases_per_drag": 1.0,
+          "seconds": 1356.3,
+          "sessions": 1,
+          "weak_intended_fires": 85,
+          "weak_misfire_fires": 160
+        }
+      },
+      "20261009-154245": {
+        "live": {
+          "arms": 1,
+          "broken_hold_ratio": 0.0,
+          "broken_holds": 0,
+          "drag_ends": 0,
+          "drags": 0,
+          "empty_arms": 0,
+          "fires": 1,
+          "fist_cancelled_drags": 0,
+          "hand_losses": 8,
+          "hand_losses_per_min": 9.0864,
+          "misfire_rate": 0.0,
+          "misfire_votes": {
+            "fist_after_fire": 0,
+            "immediate_redo": 0,
+            "low_confidence_trigger": 0,
+            "token_flip_around_fire": 0
+          },
+          "regrabs": 0,
+          "releases_per_drag": null,
+          "seconds": 52.8,
+          "sessions": 1,
+          "weak_intended_fires": 0,
+          "weak_misfire_fires": 0
+        },
+        "replay": {
+          "arms": 1,
+          "broken_hold_ratio": 0.0,
+          "broken_holds": 0,
+          "drag_ends": 0,
+          "drags": 0,
+          "empty_arms": 0,
+          "fires": 2,
+          "fist_cancelled_drags": 0,
+          "hand_losses": 8,
+          "hand_losses_per_min": 9.0864,
+          "misfire_rate": 0.0,
+          "misfire_votes": {
+            "fist_after_fire": 0,
+            "immediate_redo": 0,
+            "low_confidence_trigger": 0,
+            "token_flip_around_fire": 0
+          },
+          "regrabs": 0,
+          "releases_per_drag": null,
+          "seconds": 52.8,
+          "sessions": 1,
+          "weak_intended_fires": 1,
+          "weak_misfire_fires": 0
+        }
+      },
+      "20261009-154651": {
+        "live": {
+          "arms": 21,
+          "broken_hold_ratio": 0.087,
+          "broken_holds": 2,
+          "drag_ends": 12,
+          "drags": 12,
+          "empty_arms": 5,
+          "fires": 78,
+          "fist_cancelled_drags": 0,
+          "hand_losses": 81,
+          "hand_losses_per_min": 4.9106,
+          "misfire_rate": 0.641,
+          "misfire_votes": {
+            "fist_after_fire": 9,
+            "immediate_redo": 5,
+            "low_confidence_trigger": 32,
+            "token_flip_around_fire": 14
+          },
+          "regrabs": 1,
+          "releases_per_drag": 1.0833,
+          "seconds": 989.7,
+          "sessions": 1,
+          "weak_intended_fires": 5,
+          "weak_misfire_fires": 50
+        },
+        "replay": {
+          "arms": 20,
+          "broken_hold_ratio": 0.1667,
+          "broken_holds": 4,
+          "drag_ends": 8,
+          "drags": 8,
+          "empty_arms": 5,
+          "fires": 81,
+          "fist_cancelled_drags": 1,
+          "hand_losses": 81,
+          "hand_losses_per_min": 4.9106,
+          "misfire_rate": 0.642,
+          "misfire_votes": {
+            "fist_after_fire": 9,
+            "immediate_redo": 6,
+            "low_confidence_trigger": 33,
+            "token_flip_around_fire": 15
+          },
+          "regrabs": 0,
+          "releases_per_drag": 1.0,
+          "seconds": 989.7,
+          "sessions": 1,
+          "weak_intended_fires": 5,
+          "weak_misfire_fires": 52
+        }
+      }
+    },
+    "sessions": [
+      "20261009-154651",
+      "20261009-154245",
+      "20261009-152005",
+      "20261009-151601",
+      "20261009-150908",
+      "20261009-145832"
+    ],
+    "total": {
+      "live": {
+        "arms": 67,
+        "broken_hold_ratio": 0.2118,
+        "broken_holds": 18,
+        "drag_ends": 52,
+        "drags": 52,
+        "empty_arms": 24,
+        "fires": 277,
+        "fist_cancelled_drags": 7,
+        "hand_losses": 323,
+        "hand_losses_per_min": 5.2662,
+        "misfire_rate": 0.509,
+        "misfire_votes": {
+          "fist_after_fire": 13,
+          "immediate_redo": 15,
+          "low_confidence_trigger": 94,
+          "token_flip_around_fire": 48
+        },
+        "regrabs": 1,
+        "releases_per_drag": 1.0192,
+        "seconds": 3680.1,
+        "sessions": 6,
+        "weak_intended_fires": 65,
+        "weak_misfire_fires": 141
+      },
+      "replay": {
+        "arms": 69,
+        "broken_hold_ratio": 0.266,
+        "broken_holds": 25,
+        "drag_ends": 27,
+        "drags": 27,
+        "empty_arms": 34,
+        "fires": 456,
+        "fist_cancelled_drags": 6,
+        "hand_losses": 323,
+        "hand_losses_per_min": 5.2662,
+        "misfire_rate": 0.5,
+        "misfire_votes": {
+          "fist_after_fire": 14,
+          "immediate_redo": 14,
+          "low_confidence_trigger": 171,
+          "token_flip_around_fire": 76
+        },
+        "regrabs": 0,
+        "releases_per_drag": 1.0,
+        "seconds": 3680.1,
+        "sessions": 6,
+        "weak_intended_fires": 96,
+        "weak_misfire_fires": 228
+      }
+    }
+  },
+  "git": "dac24cf",
+  "label": "after-cosmos-2",
+  "labels": {
+    "human_labels": 0,
+    "reason": "no human labels on fire / arm segments (<session>/intent/human.jsonl); labelfn_accuracy scores human labels only",
+    "sessions_with_human": [],
+    "sessions_with_tags": [
+      "20261008-160853",
+      "20261008-161142",
+      "20261008-161507",
+      "20261008-162447",
+      "20261008-165532",
+      "20261008-171654",
+      "20261008-173122",
+      "20261008-174114",
+      "20261008-180448",
+      "20261008-181917",
+      "20261008-184108",
+      "20261008-191424",
+      "20261008-220415",
+      "20261008-231252",
+      "20261009-101425",
+      "20261009-104823",
+      "20261009-120535",
+      "20261009-124833",
+      "20261009-142733"
+    ],
+    "status": "n/a",
+    "tags": 1206
+  },
+  "model": {
+    "exists": true,
+    "path": "/Users/shmul/Library/Application Support/visual-actions/models/gestures.joblib",
+    "resolved": "/Users/shmul/Library/Application Support/visual-actions/models/gestures.joblib",
+    "sha256": "d33ede93c2738e80"
+  },
+  "paths": {
+    "datasets": "/Users/shmul/Library/Application Support/visual-actions/datasets",
+    "sessions": "/Users/shmul/Library/Application Support/visual-actions/sessions"
+  },
+  "run_time_s": 7.9,
+  "sessions": [
+    "20261009-154651",
+    "20261009-154245",
+    "20261009-152005",
+    "20261009-151601",
+    "20261009-150908",
+    "20261009-145832"
+  ],
+  "sessions_requested": 6
+}
