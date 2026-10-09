@@ -10,6 +10,19 @@ Two outputs per session:
       ambiguous ones. Fist frames come from human labels only: fist is the cancel.
   datasets/intent/<session>.jsonl   one line per labelled segment for the intent gate.
 
+Human labels are taken as they are. A judge tag (tags.jsonl, needs_human false) is taken only
+under JudgeRules, which are deliberately stricter than the human path: the first Cosmos pass
+showed that exporting every confident tag as a half-second of frames under one class sweeps
+transition and pinch frames into the wrong classes and weighs a judge like a person.
+  - confidence >= min_conf (0.85), never a drag (a drag's frames are pinches in motion);
+  - intended: the tag's true_gesture must equal the segment's engine_gesture and the Cosmos
+    verdict, when there is one, must say a still command; frames come from +-window_s (0.25 s)
+    around the engine event of a fire / arm segment, not the half second a human label gets;
+  - misfire / no_event -> none: Cosmos must call the hand incidental or dead, or the tag must
+    be >= none_min_conf (0.9);
+  - missed -> gesture: confidence >= missed_min_conf (0.9) and a Cosmos command verdict;
+  - weight = weight (0.3) x confidence; fist never.
+
 `labelfn_accuracy` scores each labelling function against the human labels, for reweighting.
 """
 
@@ -18,7 +31,7 @@ from __future__ import annotations
 import json
 import sys
 from collections.abc import Iterable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -27,13 +40,27 @@ from ..core.recorder import read_session, to_json
 from ..core.types import HandFrame
 from .events import parse_events, session_t0_ns
 from .labelfns import ARM_FNS, FIRE_FNS
-from .schema import HumanLabel, Segment, SegmentKind, Tag, Verdict, by_id, read_jsonl
+from .schema import CosmosVerdict, HumanLabel, Intent, Motion, Segment, SegmentKind, Tag, Verdict, by_id, read_jsonl
 from .segments import CONTEXT_AFTER_S
 
-FIRE_WINDOW_S = 0.5  # frames this close to the engine event of a fire segment are the shape
-JUDGE_MIN_CONF = 0.7
+FIRE_WINDOW_S = 0.5  # frames this close to the engine event of a fire segment are the shape (human labels)
+ARM_EVENT_OFFSET_S = 0.5 + 0.75  # an arm segment opens 0.5 s before the hold; the leader is held by 0.75 s in
+JUDGE_MIN_CONF = 0.85
 NONE = "none"
 FIST = "fist"
+
+
+@dataclass(frozen=True)
+class JudgeRules:
+    """When a judge tag becomes training frames (see the module docstring)."""
+
+    min_conf: float = JUDGE_MIN_CONF  # below this a tag is not a label at all
+    none_min_conf: float = 0.9  # misfire / no_event -> none without a Cosmos incidental / dead verdict
+    missed_min_conf: float = 0.9  # missed -> gesture (with a Cosmos command verdict)
+    weight: float = 0.3  # x tag confidence; a human row weighs 1.0
+    window_s: float = 0.25  # +- around the engine event of a fire / arm segment
+    none_rows: bool = True  # export misfire / no_event tags as none at all
+    missed_rows: bool = True  # export missed tags as their gesture at all
 
 
 def _classes() -> frozenset[str]:
@@ -53,6 +80,8 @@ class Labelled:
     true_gesture: str | None
     source: str  # human | judge
     weight: float
+    window_s: float = FIRE_WINDOW_S  # +- around the engine event (fire; arm too for judge rows)
+    arm_window: bool = False  # window an arm segment around its hold as well (judge rows)
 
     @property
     def gesture_class(self) -> str | None:
@@ -66,10 +95,14 @@ class Labelled:
 
     def span(self) -> tuple[float, float]:
         s = self.segment
+        t_event: float | None = None
         if s.kind is SegmentKind.FIRE:
             t_event = s.t1 - CONTEXT_AFTER_S
-            return max(s.t0, t_event - FIRE_WINDOW_S), min(s.t1, t_event + FIRE_WINDOW_S)
-        return s.t0, s.t1
+        elif s.kind is SegmentKind.ARM and self.arm_window:
+            t_event = s.t0 + ARM_EVENT_OFFSET_S
+        if t_event is None:
+            return s.t0, s.t1
+        return max(s.t0, t_event - self.window_s), min(s.t1, t_event + self.window_s)
 
 
 @dataclass
@@ -82,7 +115,52 @@ class ExportSummary:
     skipped: list[str] = field(default_factory=list)  # "<segment_id>: why"
 
 
-def collect_labels(session_dir: Path, include_judge: bool = False, judge_min_conf: float = JUDGE_MIN_CONF) -> list[Labelled]:
+def judge_label(seg: Segment, t: Tag, cosmos: CosmosVerdict | None, rules: JudgeRules) -> Labelled | str:
+    """The Labelled row a judge tag becomes under `rules`, or the reason it is refused."""
+    if t.needs_human:
+        return "judge: needs a human"
+    if t.confidence < rules.min_conf:
+        return f"judge: confidence {t.confidence:.2f} < {rules.min_conf}"
+    if seg.kind is SegmentKind.DRAG:
+        return "judge: drag frames are pinches in motion, humans only"
+    if t.true_gesture == FIST:
+        return "fist from a judge, humans only"
+    v = t.verdict
+    if v is Verdict.INTENDED:
+        if not t.true_gesture or t.true_gesture != seg.engine_gesture:
+            return f"judge: intended but true_gesture {t.true_gesture!r} != engine {seg.engine_gesture!r}"
+        if cosmos is not None and not (cosmos.intent is Intent.COMMAND and cosmos.motion is Motion.STILL):
+            return f"judge: intended but cosmos saw {cosmos.intent.value} / {cosmos.motion.value}"
+    elif v in (Verdict.MISFIRE, Verdict.NO_EVENT):
+        if not rules.none_rows:
+            return f"judge: {v.value} -> none rows are off"
+        incidental = cosmos is not None and cosmos.intent in (Intent.INCIDENTAL, Intent.DEAD)
+        if not incidental and t.confidence < rules.none_min_conf:
+            return f"judge: {v.value} -> none needs cosmos incidental / dead or confidence >= {rules.none_min_conf}"
+    elif v is Verdict.MISSED:
+        if not rules.missed_rows:
+            return "judge: missed rows are off"
+        if t.confidence < rules.missed_min_conf:
+            return f"judge: missed needs confidence >= {rules.missed_min_conf}"
+        if cosmos is None or cosmos.intent is not Intent.COMMAND:
+            return "judge: missed needs a cosmos command verdict"
+    weight = round(rules.weight * t.confidence, 3)
+    return Labelled(seg, v, t.intent.value, t.motion.value, t.true_gesture, "judge", weight, window_s=rules.window_s, arm_window=True)
+
+
+def collect_labels(
+    session_dir: Path,
+    include_judge: bool = False,
+    judge_min_conf: float | None = None,
+    rules: JudgeRules | None = None,
+    skipped: list[str] | None = None,
+) -> list[Labelled]:
+    """Human labels, plus the judge tags that pass `rules` (humans win a segment). `judge_min_conf`
+    overrides rules.min_conf (the learn config carries it); refused judge rows are explained
+    into `skipped` when given."""
+    rules = rules or JudgeRules()
+    if judge_min_conf is not None:
+        rules = replace(rules, min_conf=judge_min_conf)
     d = session_dir / "intent"
     segments = by_id(read_jsonl(d / "segments.jsonl", Segment))
     tags = by_id(read_jsonl(d / "tags.jsonl", Tag))
@@ -94,22 +172,36 @@ def collect_labels(session_dir: Path, include_judge: bool = False, judge_min_con
             continue
         out.append(Labelled(seg, h.verdict, h.intent.value, h.motion.value if h.motion else None, h.true_gesture, "human", 1.0))
     if include_judge:
+        cosmos = by_id(read_jsonl(d / "cosmos.jsonl", CosmosVerdict))
         for sid, t in tags.items():
             seg = segments.get(sid)
-            if seg is None or sid in human or t.needs_human or t.confidence < judge_min_conf:
+            if seg is None or sid in human:
                 continue
-            out.append(Labelled(seg, t.verdict, t.intent.value, t.motion.value, t.true_gesture, "judge", round(t.confidence, 3)))
+            lab = judge_label(seg, t, cosmos.get(sid), rules)
+            if isinstance(lab, str):
+                if skipped is not None:
+                    skipped.append(f"{sid}: {lab}")
+                continue
+            out.append(lab)
     out.sort(key=lambda x: x.segment.t0)
     return out
 
 
-def export_labels(session_dir: Path, datasets_dir: Path, out_prefix: str = "review", include_judge: bool = False, judge_min_conf: float = JUDGE_MIN_CONF, stamp: str | None = None) -> ExportSummary:
+def export_labels(
+    session_dir: Path,
+    datasets_dir: Path,
+    out_prefix: str = "review",
+    include_judge: bool = False,
+    judge_min_conf: float | None = None,
+    stamp: str | None = None,
+    rules: JudgeRules | None = None,
+) -> ExportSummary:
     session_dir, datasets_dir = Path(session_dir), Path(datasets_dir)
     session = session_dir.name
     summary = ExportSummary(session)
     stamp = stamp or datetime.now().strftime("%Y%m%d-%H%M%S")
     classes = _classes()
-    labelled = collect_labels(session_dir, include_judge, judge_min_conf)
+    labelled = collect_labels(session_dir, include_judge, judge_min_conf, rules, summary.skipped)
 
     events_path, landmarks = session_dir / "events.log", session_dir / "landmarks.jsonl"
     t0_ns = session_t0_ns(parse_events(events_path), landmarks) if events_path.exists() else None

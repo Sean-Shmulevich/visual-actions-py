@@ -6,8 +6,8 @@ from pathlib import Path
 
 from visual_actions.core.recorder import read_session
 from visual_actions.core.types import HandFrame
-from visual_actions.intent.export import export_labels, labelfn_accuracy
-from visual_actions.intent.schema import HumanLabel, Intent, Motion, Segment, SegmentKind, Tag, Verdict, write_jsonl
+from visual_actions.intent.export import JUDGE_MIN_CONF, JudgeRules, export_labels, labelfn_accuracy
+from visual_actions.intent.schema import CosmosVerdict, HumanLabel, Intent, Motion, Segment, SegmentKind, Tag, Verdict, write_jsonl
 from visual_actions.tools.train import CLASSES
 
 T0_NS = 5_000_000_000
@@ -86,18 +86,26 @@ def test_export_writes_classes_sources_weights_and_the_fire_window(tmp_path: Pat
     assert summary.intent_file == datasets / "intent" / "20261009-100000.jsonl"
 
 
-def test_judge_labels_are_weighted_and_never_fist(tmp_path: Path):
+def cosmos(s: Segment, intent: Intent = Intent.COMMAND, motion: Motion = Motion.STILL) -> CosmosVerdict:
+    return CosmosVerdict(s.segment_id, True, True, "yes", True, False, intent, motion, "", "", 0.9)
+
+
+def tag(s: Segment, verdict: Verdict, gesture: str | None, confidence: float = 0.9, intent: Intent = Intent.COMMAND, motion: Motion = Motion.STILL, needs_human: bool = False) -> Tag:
+    return Tag(s.segment_id, verdict, intent, motion, gesture, confidence=confidence, needs_human=needs_human)
+
+
+def test_judge_labels_are_weighted_windowed_and_never_fist(tmp_path: Path):
     s_judge = seg(0, SegmentKind.FIRE, 8.5, 11.5, gesture="open_palm")
     s_judge_fist = seg(1, SegmentKind.FIRE, 18.5, 21.5, gesture="fist")
     s_judge_unsure = seg(2, SegmentKind.FIRE, 28.5, 31.5)
     s_judge_low = seg(3, SegmentKind.FIRE, 38.5, 41.5)
     s_both = seg(4, SegmentKind.FIRE, 48.5, 51.5)
     tags = [
-        Tag(s_judge.segment_id, Verdict.INTENDED, Intent.COMMAND, Motion.STILL, "open_palm", confidence=0.9, needs_human=False),
-        Tag(s_judge_fist.segment_id, Verdict.INTENDED, Intent.COMMAND, Motion.STILL, "fist", confidence=0.95, needs_human=False),
-        Tag(s_judge_unsure.segment_id, Verdict.MISFIRE, Intent.INCIDENTAL, Motion.STILL, None, confidence=0.9, needs_human=True),
-        Tag(s_judge_low.segment_id, Verdict.MISFIRE, Intent.INCIDENTAL, Motion.STILL, None, confidence=0.4, needs_human=False),
-        Tag(s_both.segment_id, Verdict.MISFIRE, Intent.INCIDENTAL, Motion.STILL, None, confidence=0.9, needs_human=False),
+        tag(s_judge, Verdict.INTENDED, "open_palm"),
+        tag(s_judge_fist, Verdict.INTENDED, "fist", confidence=0.95),
+        tag(s_judge_unsure, Verdict.MISFIRE, None, intent=Intent.INCIDENTAL, needs_human=True),
+        tag(s_judge_low, Verdict.MISFIRE, None, confidence=0.4, intent=Intent.INCIDENTAL),
+        tag(s_both, Verdict.MISFIRE, None, intent=Intent.INCIDENTAL),
     ]
     d = write_session(tmp_path, [s_judge, s_judge_fist, s_judge_unsure, s_judge_low, s_both], [human(s_both, Verdict.INTENDED)], tags)
     datasets = tmp_path / "datasets"
@@ -110,13 +118,118 @@ def test_judge_labels_are_weighted_and_never_fist(tmp_path: Path):
     assert not (datasets / "fist").exists()
     assert any("fist from a judge" in why for why in both.skipped)
     op = frames_of(both.files["open_palm"])
-    assert all(f["source"] == "judge" and f["weight"] == 0.9 for f in op)
+    # a judge row weighs 0.3 x its confidence and gets +-0.25 s around the fire at 10.0 s: 5 frames at 10 fps (9.8 .. 10.2)
+    assert len(op) == 5 and all(f["source"] == "judge" and f["weight"] == 0.27 for f in op)
+    assert all(9.75 <= (f["t_ns"] - T0_NS) / 1e9 <= 10.25 for f in op)
     hl = frames_of(both.files["h_left"])
-    assert all(f["source"] == "human" and f["weight"] == 1.0 for f in hl)  # the human label wins over the judge's misfire
+    assert len(hl) == 11 and all(f["source"] == "human" and f["weight"] == 1.0 for f in hl)  # the human label wins over the judge's misfire
     rows = {json.loads(l)["segment_id"]: json.loads(l) for l in both.intent_file.read_text().splitlines()}
-    assert set(rows) == {s_judge.segment_id, s_judge_fist.segment_id, s_both.segment_id}  # unsure and low-confidence tags stay out
-    assert rows[s_judge.segment_id]["source"] == "judge" and rows[s_judge.segment_id]["weight"] == 0.9
+    assert set(rows) == {s_judge.segment_id, s_both.segment_id}  # unsure, low-confidence and refused tags stay out
+    assert rows[s_judge.segment_id]["source"] == "judge" and rows[s_judge.segment_id]["weight"] == 0.27
     assert rows[s_both.segment_id]["source"] == "human"
+    assert any("needs a human" in why for why in both.skipped) and any("confidence 0.40 < 0.85" in why for why in both.skipped)
+
+
+def test_judge_rules_are_parameters_with_strict_defaults():
+    r = JudgeRules()
+    assert (r.min_conf, r.none_min_conf, r.missed_min_conf, r.weight, r.window_s, r.none_rows, r.missed_rows) == (0.85, 0.9, 0.9, 0.3, 0.25, True, True)
+    assert JUDGE_MIN_CONF == 0.85
+
+
+def test_judge_intended_needs_the_engine_gesture_and_a_still_cosmos_command(tmp_path: Path):
+    s_match = seg(0, SegmentKind.FIRE, 8.5, 11.5, gesture="open_palm")
+    s_other = seg(1, SegmentKind.FIRE, 18.5, 21.5, gesture="open_palm")  # judge says two_up: the engine fired on another shape
+    s_moving = seg(2, SegmentKind.FIRE, 28.5, 31.5, gesture="open_palm")  # cosmos saw the hand travel
+    s_incidental = seg(3, SegmentKind.FIRE, 38.5, 41.5, gesture="open_palm")  # cosmos: incidental
+    s_no_gesture = seg(4, SegmentKind.FIRE, 48.5, 51.5, gesture="open_palm")  # tag names no gesture
+    s_no_cosmos = seg(5, SegmentKind.ARM, 52.0, 56.0, gesture="two_up")  # no cosmos verdict: the tag alone decides
+    segs = [s_match, s_other, s_moving, s_incidental, s_no_gesture, s_no_cosmos]
+    tags = [
+        tag(s_match, Verdict.INTENDED, "open_palm"),
+        tag(s_other, Verdict.INTENDED, "two_up"),
+        tag(s_moving, Verdict.INTENDED, "open_palm"),
+        tag(s_incidental, Verdict.INTENDED, "open_palm"),
+        tag(s_no_gesture, Verdict.INTENDED, None),
+        tag(s_no_cosmos, Verdict.INTENDED, "two_up"),
+    ]
+    d = write_session(tmp_path, segs, tags=tags)
+    write_jsonl(d / "intent" / "cosmos.jsonl", [cosmos(s_match), cosmos(s_other), cosmos(s_moving, motion=Motion.MOVING), cosmos(s_incidental, intent=Intent.INCIDENTAL), cosmos(s_no_gesture)])
+    summary = export_labels(d, tmp_path / "datasets", stamp="x", include_judge=True)
+    assert set(summary.files) == {"open_palm", "two_up"} and summary.frames["open_palm"] == 5
+    # an arm segment is windowed around its hold: 0.5 s lead-in + 0.75 s of hold, +-0.25 s -> 53.0 .. 53.5 s
+    two = frames_of(summary.files["two_up"])
+    assert len(two) == 6 and all(53.0 <= (f["t_ns"] - T0_NS) / 1e9 <= 53.5 for f in two)
+    why = "\n".join(summary.skipped)
+    assert "s/fire/0001: judge: intended but true_gesture 'two_up' != engine 'open_palm'" in why
+    assert "s/fire/0002: judge: intended but cosmos saw command / moving" in why
+    assert "s/fire/0003: judge: intended but cosmos saw incidental / still" in why
+    assert "s/fire/0004: judge: intended but true_gesture None" in why
+
+
+def test_judge_drags_are_never_exported(tmp_path: Path):
+    s_drag = seg(0, SegmentKind.DRAG, 8.0, 12.0, gesture="pinch")
+    s_drag_human = seg(1, SegmentKind.DRAG, 18.0, 22.0, gesture="pinch")
+    d = write_session(tmp_path, [s_drag, s_drag_human], [human(s_drag_human, Verdict.INTENDED, gesture="pinch")], [tag(s_drag, Verdict.INTENDED, "pinch", confidence=0.99), tag(s_drag_human, Verdict.MISFIRE, None, confidence=0.99)])
+    summary = export_labels(d, tmp_path / "datasets", stamp="x", include_judge=True)
+    assert set(summary.files) == {"pinch"} and summary.frames["pinch"] == 41  # the human's whole drag, nothing from the judge
+    assert all(f["source"] == "human" for f in frames_of(summary.files["pinch"]))
+    assert "s/drag/0000: judge: drag frames are pinches in motion, humans only" in summary.skipped
+
+
+def test_judge_none_rows_need_cosmos_incidental_or_high_confidence(tmp_path: Path):
+    s_incidental = seg(0, SegmentKind.FIRE, 8.5, 11.5)  # cosmos: incidental, tag 0.85 -> none
+    s_dead = seg(1, SegmentKind.HAND, 20.0, 22.0, gesture=None)  # cosmos: dead, no_event 0.85 -> none, whole span
+    s_command = seg(2, SegmentKind.FIRE, 28.5, 31.5)  # cosmos: command, tag 0.85 -> refused
+    s_sure = seg(3, SegmentKind.FIRE, 38.5, 41.5)  # cosmos: command, tag 0.9 -> none on confidence alone
+    s_no_cosmos = seg(4, SegmentKind.FIRE, 48.5, 51.5)  # no cosmos, 0.85 -> refused
+    segs = [s_incidental, s_dead, s_command, s_sure, s_no_cosmos]
+    tags = [
+        tag(s_incidental, Verdict.MISFIRE, None, confidence=0.85, intent=Intent.INCIDENTAL),
+        tag(s_dead, Verdict.NO_EVENT, None, confidence=0.85, intent=Intent.DEAD),
+        tag(s_command, Verdict.MISFIRE, None, confidence=0.85, intent=Intent.INCIDENTAL),
+        tag(s_sure, Verdict.MISFIRE, None, confidence=0.9, intent=Intent.INCIDENTAL),
+        tag(s_no_cosmos, Verdict.MISFIRE, None, confidence=0.85, intent=Intent.INCIDENTAL),
+    ]
+    d = write_session(tmp_path, segs, tags=tags)
+    write_jsonl(d / "intent" / "cosmos.jsonl", [cosmos(s_incidental, intent=Intent.INCIDENTAL), cosmos(s_dead, intent=Intent.DEAD), cosmos(s_command), cosmos(s_sure)])
+    summary = export_labels(d, tmp_path / "datasets", stamp="x", include_judge=True)
+    assert set(summary.files) == {"none"} and summary.frames["none"] == 5 + 21 + 5
+    assert sum("-> none needs cosmos incidental / dead or confidence >= 0.9" in why for why in summary.skipped) == 2
+    rows = [json.loads(l) for l in summary.intent_file.read_text().splitlines()]
+    assert [r["segment_id"] for r in rows] == [s_incidental.segment_id, s_dead.segment_id, s_sure.segment_id]
+    assert rows[0]["weight"] == 0.255 and rows[2]["weight"] == 0.27
+
+    off = export_labels(d, tmp_path / "off", stamp="x", include_judge=True, rules=JudgeRules(none_rows=False))
+    assert off.files == {} and sum("none rows are off" in why for why in off.skipped) == 5
+
+
+def test_judge_missed_rows_need_high_confidence_and_a_cosmos_command(tmp_path: Path):
+    s_ok = seg(0, SegmentKind.FIRE, 8.5, 11.5, gesture="open_palm")  # engine fired open_palm, the person meant two_up
+    s_low = seg(1, SegmentKind.FIRE, 18.5, 21.5, gesture="open_palm")
+    s_no_cosmos = seg(2, SegmentKind.BROKEN_HOLD, 30.0, 32.0, gesture="open_palm")
+    s_incidental = seg(3, SegmentKind.FIRE, 38.5, 41.5, gesture="open_palm")
+    segs = [s_ok, s_low, s_no_cosmos, s_incidental]
+    tags = [tag(s_ok, Verdict.MISSED, "two_up", confidence=0.9), tag(s_low, Verdict.MISSED, "two_up", confidence=0.89), tag(s_no_cosmos, Verdict.MISSED, "two_up", confidence=0.95), tag(s_incidental, Verdict.MISSED, "two_up", confidence=0.95)]
+    d = write_session(tmp_path, segs, tags=tags)
+    write_jsonl(d / "intent" / "cosmos.jsonl", [cosmos(s_ok), cosmos(s_low), cosmos(s_incidental, intent=Intent.INCIDENTAL)])
+    summary = export_labels(d, tmp_path / "datasets", stamp="x", include_judge=True)
+    assert set(summary.files) == {"two_up"} and summary.frames["two_up"] == 5  # the fire window, as two_up
+    assert "s/fire/0001: judge: missed needs confidence >= 0.9" in summary.skipped
+    assert sum("missed needs a cosmos command verdict" in why for why in summary.skipped) == 2
+
+    off = export_labels(d, tmp_path / "off", stamp="x", include_judge=True, rules=JudgeRules(missed_rows=False, weight=0.15))
+    assert off.files == {} and sum("missed rows are off" in why for why in off.skipped) == 4
+
+
+def test_judge_weight_and_window_are_parameters(tmp_path: Path):
+    s = seg(0, SegmentKind.FIRE, 8.5, 11.5, gesture="open_palm")
+    d = write_session(tmp_path, [s], tags=[tag(s, Verdict.INTENDED, "open_palm", confidence=0.8)])
+    assert export_labels(d, tmp_path / "a", stamp="x", include_judge=True).files == {}  # 0.8 < 0.85
+    loose = export_labels(d, tmp_path / "b", stamp="x", include_judge=True, rules=JudgeRules(min_conf=0.7, weight=0.15, window_s=0.5))
+    op = frames_of(loose.files["open_palm"])
+    assert len(op) == 11 and all(f["weight"] == 0.12 for f in op)
+    # the learn config's judge_min_conf still overrides the rule's threshold
+    assert export_labels(d, tmp_path / "c", stamp="x", include_judge=True, judge_min_conf=0.75).frames["open_palm"] == 5
 
 
 def test_export_without_landmarks_writes_no_frames_but_says_why(tmp_path: Path):

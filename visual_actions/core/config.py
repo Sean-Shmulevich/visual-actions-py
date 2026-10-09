@@ -192,7 +192,7 @@ class LearnConfig:
     location: str = ""  # free camera / location tag written into the model manifest (e.g. "desk-macbook")
     accuracy_margin: float = 0.01  # gate: held-out weighted frame accuracy may drop at most this much
     intended_keep: float = 0.95  # gate: weak-intended fires must stay at least this fraction of the champion's
-    judge_min_conf: float = 0.7  # judge tags below this confidence are not exported
+    judge_min_conf: float = 0.85  # judge tags below this confidence are not exported (intent/export.JudgeRules)
     keep_versions: int = 5  # user model versions kept on disk
 
 

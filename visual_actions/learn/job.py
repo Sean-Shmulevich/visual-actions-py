@@ -27,6 +27,7 @@ from typing import Any
 
 from ..core.config import Config, load_config
 from ..intent.events import parse_events
+from ..intent.export import JudgeRules
 from ..intent.schema import write_jsonl
 from ..intent.segments import segment_session
 from ..paths import config_path, datasets_dir, learn_dir, models_dir, sessions_dir, user_models_dir
@@ -150,7 +151,7 @@ def _write_json(path: Path, data: Any) -> None:
 # -- one session ------------------------------------------------------------------------------
 
 
-def process_session(session: Path, datasets: Path, judges: Judges, judge_min_conf: float, log: Log) -> SessionResult:
+def process_session(session: Path, datasets: Path, judges: Judges, judge_min_conf: float, log: Log, judge_rules: JudgeRules | None = None) -> SessionResult:
     """segments (if missing) -> judge passes (each best-effort) -> export (humans win)."""
     res = SessionResult(session.name)
     d = session / "intent"
@@ -199,7 +200,7 @@ def process_session(session: Path, datasets: Path, judges: Judges, judge_min_con
 
     from ..intent.export import export_labels
 
-    summary = export_labels(session, datasets, include_judge=True, judge_min_conf=judge_min_conf)
+    summary = export_labels(session, datasets, include_judge=True, judge_min_conf=judge_min_conf, rules=judge_rules)
     res.frames = dict(summary.frames)
     res.skipped = list(summary.skipped)
     log(f"{session.name}: exported {res.exported} frames " + " ".join(f"{k}={v}" for k, v in sorted(res.frames.items())))
@@ -231,6 +232,7 @@ def run(
     log: Log = print,
     judge_clients: Judges | None = None,
     force: bool = False,
+    judge_rules: JudgeRules | None = None,
 ) -> Report:
     day = day or date.today()  # noqa: DTZ011 - local, like the session stamps
     cfg = config or load_config(config_path())
@@ -262,7 +264,7 @@ def run(
                 log(f"{s.name}: {why}, left for the next run")
                 continue
             try:
-                res = process_session(s, datasets, clients, lc.judge_min_conf, log)
+                res = process_session(s, datasets, clients, lc.judge_min_conf, log, judge_rules)
                 if why:
                     res.note = why
             except Exception as e:  # noqa: BLE001 - one broken session must not stop the night
