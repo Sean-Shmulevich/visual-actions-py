@@ -1,0 +1,747 @@
+{
+  "classifier": {
+    "by_class": {
+      "fist": 3409,
+      "h_left": 1768,
+      "h_right": 1702,
+      "none": 3466,
+      "open_palm": 3746,
+      "pinch": 2014,
+      "point_up": 2910,
+      "thumbs_down": 2000,
+      "thumbs_up": 2000,
+      "two_up": 2931
+    },
+    "by_source": {
+      "public": 16160,
+      "user": 9786
+    },
+    "files": [
+      {
+        "file": "fist/20261008-001521.jsonl",
+        "frames": 897,
+        "sha256": "d4dff1c2ffeabf9e",
+        "source": "user"
+      },
+      {
+        "file": "fist/20261008-002441.jsonl",
+        "frames": 491,
+        "sha256": "bb3b47636d2386d0",
+        "source": "user"
+      },
+      {
+        "file": "fist/public-hagrid_hf.jsonl",
+        "frames": 21,
+        "sha256": "76b5618b772dbcbe",
+        "source": "public"
+      },
+      {
+        "file": "fist/public-hagrid_v2.jsonl",
+        "frames": 2000,
+        "sha256": "89ce5a40e439de37",
+        "source": "public"
+      },
+      {
+        "file": "h_left/20261008-001521.jsonl",
+        "frames": 898,
+        "sha256": "342f7922d9c1d3eb",
+        "source": "user"
+      },
+      {
+        "file": "h_left/20261008-002441.jsonl",
+        "frames": 870,
+        "sha256": "db800be09a16944f",
+        "source": "user"
+      },
+      {
+        "file": "h_right/20261008-001521.jsonl",
+        "frames": 854,
+        "sha256": "59e28e712745da71",
+        "source": "user"
+      },
+      {
+        "file": "h_right/20261008-002441.jsonl",
+        "frames": 848,
+        "sha256": "b1d32ed6be315da3",
+        "source": "user"
+      },
+      {
+        "file": "none/20261008-001521.jsonl",
+        "frames": 207,
+        "sha256": "1571ebceb69ea279",
+        "source": "user"
+      },
+      {
+        "file": "none/20261008-002441.jsonl",
+        "frames": 1194,
+        "sha256": "bd76492b9c83d47a",
+        "source": "user"
+      },
+      {
+        "file": "none/public-hagrid_hf.jsonl",
+        "frames": 65,
+        "sha256": "902b78bfdc863dab",
+        "source": "public"
+      },
+      {
+        "file": "none/public-hagrid_v2.jsonl",
+        "frames": 2000,
+        "sha256": "f8b80666a32ea711",
+        "source": "public"
+      },
+      {
+        "file": "open_palm/20261008-001521.jsonl",
+        "frames": 893,
+        "sha256": "8db1669708811274",
+        "source": "user"
+      },
+      {
+        "file": "open_palm/20261008-002441.jsonl",
+        "frames": 841,
+        "sha256": "d5a7ef5b5680be14",
+        "source": "user"
+      },
+      {
+        "file": "open_palm/public-hagrid_hf.jsonl",
+        "frames": 12,
+        "sha256": "42399b6ba8d400f4",
+        "source": "public"
+      },
+      {
+        "file": "open_palm/public-hagrid_v2.jsonl",
+        "frames": 2000,
+        "sha256": "b731704de655fd02",
+        "source": "public"
+      },
+      {
+        "file": "pinch/public-hagrid_hf.jsonl",
+        "frames": 14,
+        "sha256": "a841aeacaf07303f",
+        "source": "public"
+      },
+      {
+        "file": "pinch/public-hagrid_v2.jsonl",
+        "frames": 2000,
+        "sha256": "71d3ff128a9a2282",
+        "source": "public"
+      },
+      {
+        "file": "point_up/20261008-011937.jsonl",
+        "frames": 897,
+        "sha256": "ac2a6ab7a76ec756",
+        "source": "user"
+      },
+      {
+        "file": "point_up/public-hagrid_hf.jsonl",
+        "frames": 13,
+        "sha256": "b529e4a51db2d43a",
+        "source": "public"
+      },
+      {
+        "file": "point_up/public-hagrid_v2.jsonl",
+        "frames": 2000,
+        "sha256": "b42aa2c0b9327b7e",
+        "source": "public"
+      },
+      {
+        "file": "thumbs_down/public-hagrid_v2.jsonl",
+        "frames": 2000,
+        "sha256": "8b1d0138846fbea7",
+        "source": "public"
+      },
+      {
+        "file": "thumbs_up/public-hagrid_v2.jsonl",
+        "frames": 2000,
+        "sha256": "c562896d6ec2e71e",
+        "source": "public"
+      },
+      {
+        "file": "two_up/20261008-011937.jsonl",
+        "frames": 896,
+        "sha256": "36064b8a5ba90219",
+        "source": "user"
+      },
+      {
+        "file": "two_up/public-hagrid_hf.jsonl",
+        "frames": 35,
+        "sha256": "f3291967d3b4438e",
+        "source": "public"
+      },
+      {
+        "file": "two_up/public-hagrid_v2.jsonl",
+        "frames": 2000,
+        "sha256": "3e0ceff1509a1320",
+        "source": "public"
+      }
+    ],
+    "frames": 25946,
+    "heldout": {
+      "accuracy": 0.8721,
+      "by_class": {
+        "fist": 491,
+        "h_left": 870,
+        "h_right": 848,
+        "none": 1194,
+        "open_palm": 841,
+        "point_up": 897,
+        "two_up": 896
+      },
+      "confusion": {
+        "fist": {
+          "fist": 275,
+          "none": 5,
+          "open_palm": 2,
+          "pinch": 1,
+          "thumbs_down": 110,
+          "thumbs_up": 98
+        },
+        "h_left": {
+          "fist": 5,
+          "h_left": 794,
+          "none": 61,
+          "thumbs_up": 10
+        },
+        "h_right": {
+          "h_right": 785,
+          "none": 55,
+          "pinch": 5,
+          "thumbs_down": 3
+        },
+        "none": {
+          "fist": 9,
+          "h_left": 227,
+          "none": 852,
+          "open_palm": 11,
+          "point_up": 40,
+          "thumbs_down": 1,
+          "thumbs_up": 48,
+          "two_up": 6
+        },
+        "open_palm": {
+          "none": 23,
+          "open_palm": 814,
+          "pinch": 1,
+          "two_up": 3
+        },
+        "point_up": {
+          "none": 35,
+          "point_up": 862
+        },
+        "two_up": {
+          "none": 13,
+          "two_up": 883
+        }
+      },
+      "fist_recall": 0.5601,
+      "frames": 6037,
+      "groups": [
+        "fist/20261008-002441.jsonl",
+        "h_left/20261008-002441.jsonl",
+        "h_right/20261008-002441.jsonl",
+        "none/20261008-002441.jsonl",
+        "open_palm/20261008-002441.jsonl",
+        "point_up/20261008-011937.jsonl",
+        "two_up/20261008-011937.jsonl"
+      ],
+      "per_class": {
+        "fist": {
+          "accuracy": 0.5601,
+          "n": 491,
+          "precision": 0.9516
+        },
+        "h_left": {
+          "accuracy": 0.9126,
+          "n": 870,
+          "precision": 0.7777
+        },
+        "h_right": {
+          "accuracy": 0.9257,
+          "n": 848,
+          "precision": 1.0
+        },
+        "none": {
+          "accuracy": 0.7136,
+          "n": 1194,
+          "precision": 0.8161
+        },
+        "open_palm": {
+          "accuracy": 0.9679,
+          "n": 841,
+          "precision": 0.9843
+        },
+        "point_up": {
+          "accuracy": 0.961,
+          "n": 897,
+          "precision": 0.9557
+        },
+        "two_up": {
+          "accuracy": 0.9855,
+          "n": 896,
+          "precision": 0.9899
+        }
+      },
+      "protocol": "newest user session per class (public / synth files train only)",
+      "top_confusions": [
+        {
+          "n": 227,
+          "pred": "h_left",
+          "true": "none"
+        },
+        {
+          "n": 110,
+          "pred": "thumbs_down",
+          "true": "fist"
+        },
+        {
+          "n": 98,
+          "pred": "thumbs_up",
+          "true": "fist"
+        },
+        {
+          "n": 61,
+          "pred": "none",
+          "true": "h_left"
+        },
+        {
+          "n": 55,
+          "pred": "none",
+          "true": "h_right"
+        },
+        {
+          "n": 48,
+          "pred": "thumbs_up",
+          "true": "none"
+        },
+        {
+          "n": 40,
+          "pred": "point_up",
+          "true": "none"
+        },
+        {
+          "n": 35,
+          "pred": "none",
+          "true": "point_up"
+        }
+      ],
+      "train_frames": 19909
+    },
+    "status": "ok"
+  },
+  "config": {
+    "exists": true,
+    "path": "/Users/shmul/Library/Application Support/visual-actions/config.toml",
+    "profile": "strict",
+    "resolved": "/Users/shmul/Library/Application Support/visual-actions/config.toml",
+    "sha256": "61cff0b2d0905543"
+  },
+  "created_at": "2026-10-09T15:08:35",
+  "date": "2026-10-09",
+  "engine": {
+    "per_session": {
+      "20261009-101425": {
+        "live": {
+          "arms": 7,
+          "broken_hold_ratio": 0.0,
+          "broken_holds": 0,
+          "drag_ends": 15,
+          "drags": 15,
+          "empty_arms": 0,
+          "fires": 49,
+          "fist_cancelled_drags": 0,
+          "hand_losses": 26,
+          "hand_losses_per_min": 6.9372,
+          "misfire_rate": 0.1633,
+          "misfire_votes": {
+            "fist_after_fire": 4,
+            "immediate_redo": 2,
+            "low_confidence_trigger": 1,
+            "token_flip_around_fire": 5
+          },
+          "regrabs": 0,
+          "releases_per_drag": 1.0,
+          "seconds": 224.9,
+          "sessions": 1,
+          "weak_intended_fires": 30,
+          "weak_misfire_fires": 8
+        },
+        "replay": {
+          "arms": 2,
+          "broken_hold_ratio": 0.8462,
+          "broken_holds": 11,
+          "drag_ends": 0,
+          "drags": 0,
+          "empty_arms": 2,
+          "fires": 0,
+          "fist_cancelled_drags": 0,
+          "hand_losses": 26,
+          "hand_losses_per_min": 6.9372,
+          "misfire_rate": null,
+          "misfire_votes": {
+            "fist_after_fire": 0,
+            "immediate_redo": 0,
+            "low_confidence_trigger": 0,
+            "token_flip_around_fire": 0
+          },
+          "regrabs": 0,
+          "releases_per_drag": null,
+          "seconds": 224.9,
+          "sessions": 1,
+          "weak_intended_fires": 0,
+          "weak_misfire_fires": 0
+        }
+      },
+      "20261009-104823": {
+        "live": {
+          "arms": 3,
+          "broken_hold_ratio": 0.0,
+          "broken_holds": 0,
+          "drag_ends": 2,
+          "drags": 2,
+          "empty_arms": 0,
+          "fires": 15,
+          "fist_cancelled_drags": 0,
+          "hand_losses": 9,
+          "hand_losses_per_min": 10.1848,
+          "misfire_rate": 0.2,
+          "misfire_votes": {
+            "fist_after_fire": 2,
+            "immediate_redo": 0,
+            "low_confidence_trigger": 0,
+            "token_flip_around_fire": 1
+          },
+          "regrabs": 0,
+          "releases_per_drag": 1.0,
+          "seconds": 53.0,
+          "sessions": 1,
+          "weak_intended_fires": 1,
+          "weak_misfire_fires": 3
+        },
+        "replay": {
+          "arms": 0,
+          "broken_hold_ratio": 1.0,
+          "broken_holds": 3,
+          "drag_ends": 0,
+          "drags": 0,
+          "empty_arms": 0,
+          "fires": 0,
+          "fist_cancelled_drags": 0,
+          "hand_losses": 9,
+          "hand_losses_per_min": 10.1848,
+          "misfire_rate": null,
+          "misfire_votes": {
+            "fist_after_fire": 0,
+            "immediate_redo": 0,
+            "low_confidence_trigger": 0,
+            "token_flip_around_fire": 0
+          },
+          "regrabs": 0,
+          "releases_per_drag": null,
+          "seconds": 53.0,
+          "sessions": 1,
+          "weak_intended_fires": 0,
+          "weak_misfire_fires": 0
+        }
+      },
+      "20261009-120535": {
+        "live": {
+          "arms": 21,
+          "broken_hold_ratio": 0.4,
+          "broken_holds": 14,
+          "drag_ends": 47,
+          "drags": 47,
+          "empty_arms": 1,
+          "fires": 115,
+          "fist_cancelled_drags": 0,
+          "hand_losses": 248,
+          "hand_losses_per_min": 5.9851,
+          "misfire_rate": 0.2957,
+          "misfire_votes": {
+            "fist_after_fire": 6,
+            "immediate_redo": 0,
+            "low_confidence_trigger": 20,
+            "token_flip_around_fire": 20
+          },
+          "regrabs": 0,
+          "releases_per_drag": 1.0,
+          "seconds": 2486.2,
+          "sessions": 1,
+          "weak_intended_fires": 41,
+          "weak_misfire_fires": 34
+        },
+        "replay": {
+          "arms": 21,
+          "broken_hold_ratio": 0.4324,
+          "broken_holds": 16,
+          "drag_ends": 12,
+          "drags": 12,
+          "empty_arms": 8,
+          "fires": 117,
+          "fist_cancelled_drags": 2,
+          "hand_losses": 248,
+          "hand_losses_per_min": 5.9851,
+          "misfire_rate": 0.3333,
+          "misfire_votes": {
+            "fist_after_fire": 5,
+            "immediate_redo": 0,
+            "low_confidence_trigger": 22,
+            "token_flip_around_fire": 24
+          },
+          "regrabs": 0,
+          "releases_per_drag": 1.0,
+          "seconds": 2486.2,
+          "sessions": 1,
+          "weak_intended_fires": 43,
+          "weak_misfire_fires": 39
+        }
+      },
+      "20261009-124833": {
+        "live": {
+          "arms": 4,
+          "broken_hold_ratio": 0.0,
+          "broken_holds": 0,
+          "drag_ends": 42,
+          "drags": 42,
+          "empty_arms": 0,
+          "fires": 0,
+          "fist_cancelled_drags": 2,
+          "hand_losses": 53,
+          "hand_losses_per_min": 8.8602,
+          "misfire_rate": null,
+          "misfire_votes": {
+            "fist_after_fire": 0,
+            "immediate_redo": 0,
+            "low_confidence_trigger": 0,
+            "token_flip_around_fire": 0
+          },
+          "regrabs": 0,
+          "releases_per_drag": 1.0,
+          "seconds": 358.9,
+          "sessions": 1,
+          "weak_intended_fires": 0,
+          "weak_misfire_fires": 0
+        },
+        "replay": {
+          "arms": 4,
+          "broken_hold_ratio": 0.5,
+          "broken_holds": 4,
+          "drag_ends": 10,
+          "drags": 10,
+          "empty_arms": 0,
+          "fires": 0,
+          "fist_cancelled_drags": 0,
+          "hand_losses": 53,
+          "hand_losses_per_min": 8.8602,
+          "misfire_rate": null,
+          "misfire_votes": {
+            "fist_after_fire": 0,
+            "immediate_redo": 0,
+            "low_confidence_trigger": 0,
+            "token_flip_around_fire": 0
+          },
+          "regrabs": 0,
+          "releases_per_drag": 1.0,
+          "seconds": 358.9,
+          "sessions": 1,
+          "weak_intended_fires": 0,
+          "weak_misfire_fires": 0
+        }
+      },
+      "20261009-132737": {
+        "live": {
+          "arms": 24,
+          "broken_hold_ratio": 0.6,
+          "broken_holds": 36,
+          "drag_ends": 19,
+          "drags": 19,
+          "empty_arms": 3,
+          "fires": 63,
+          "fist_cancelled_drags": 0,
+          "hand_losses": 346,
+          "hand_losses_per_min": 5.7992,
+          "misfire_rate": 0.6508,
+          "misfire_votes": {
+            "fist_after_fire": 12,
+            "immediate_redo": 3,
+            "low_confidence_trigger": 22,
+            "token_flip_around_fire": 17
+          },
+          "regrabs": 0,
+          "releases_per_drag": 1.0,
+          "seconds": 3579.8,
+          "sessions": 1,
+          "weak_intended_fires": 8,
+          "weak_misfire_fires": 41
+        },
+        "replay": {
+          "arms": 23,
+          "broken_hold_ratio": 0.5965,
+          "broken_holds": 34,
+          "drag_ends": 13,
+          "drags": 13,
+          "empty_arms": 3,
+          "fires": 60,
+          "fist_cancelled_drags": 2,
+          "hand_losses": 346,
+          "hand_losses_per_min": 5.7992,
+          "misfire_rate": 0.65,
+          "misfire_votes": {
+            "fist_after_fire": 11,
+            "immediate_redo": 3,
+            "low_confidence_trigger": 22,
+            "token_flip_around_fire": 16
+          },
+          "regrabs": 2,
+          "releases_per_drag": 1.1538,
+          "seconds": 3579.8,
+          "sessions": 1,
+          "weak_intended_fires": 7,
+          "weak_misfire_fires": 39
+        }
+      },
+      "20261009-142733": {
+        "live": {
+          "arms": 12,
+          "broken_hold_ratio": 0.5714,
+          "broken_holds": 16,
+          "drag_ends": 10,
+          "drags": 10,
+          "empty_arms": 6,
+          "fires": 57,
+          "fist_cancelled_drags": 1,
+          "hand_losses": 161,
+          "hand_losses_per_min": 5.2105,
+          "misfire_rate": 0.5088,
+          "misfire_votes": {
+            "fist_after_fire": 3,
+            "immediate_redo": 22,
+            "low_confidence_trigger": 2,
+            "token_flip_around_fire": 3
+          },
+          "regrabs": 1,
+          "releases_per_drag": 1.1,
+          "seconds": 1853.9,
+          "sessions": 1,
+          "weak_intended_fires": 24,
+          "weak_misfire_fires": 29
+        },
+        "replay": {
+          "arms": 11,
+          "broken_hold_ratio": 0.4762,
+          "broken_holds": 10,
+          "drag_ends": 4,
+          "drags": 4,
+          "empty_arms": 5,
+          "fires": 26,
+          "fist_cancelled_drags": 0,
+          "hand_losses": 161,
+          "hand_losses_per_min": 5.2105,
+          "misfire_rate": 0.1923,
+          "misfire_votes": {
+            "fist_after_fire": 1,
+            "immediate_redo": 0,
+            "low_confidence_trigger": 2,
+            "token_flip_around_fire": 3
+          },
+          "regrabs": 0,
+          "releases_per_drag": 1.0,
+          "seconds": 1853.9,
+          "sessions": 1,
+          "weak_intended_fires": 23,
+          "weak_misfire_fires": 5
+        }
+      }
+    },
+    "sessions": [
+      "20261009-142733",
+      "20261009-132737",
+      "20261009-124833",
+      "20261009-120535",
+      "20261009-104823",
+      "20261009-101425"
+    ],
+    "total": {
+      "live": {
+        "arms": 71,
+        "broken_hold_ratio": 0.4818,
+        "broken_holds": 66,
+        "drag_ends": 135,
+        "drags": 135,
+        "empty_arms": 10,
+        "fires": 299,
+        "fist_cancelled_drags": 3,
+        "hand_losses": 843,
+        "hand_losses_per_min": 5.9112,
+        "misfire_rate": 0.3846,
+        "misfire_votes": {
+          "fist_after_fire": 27,
+          "immediate_redo": 27,
+          "low_confidence_trigger": 45,
+          "token_flip_around_fire": 46
+        },
+        "regrabs": 1,
+        "releases_per_drag": 1.0074,
+        "seconds": 8556.7,
+        "sessions": 6,
+        "weak_intended_fires": 104,
+        "weak_misfire_fires": 115
+      },
+      "replay": {
+        "arms": 61,
+        "broken_hold_ratio": 0.5612,
+        "broken_holds": 78,
+        "drag_ends": 39,
+        "drags": 39,
+        "empty_arms": 18,
+        "fires": 203,
+        "fist_cancelled_drags": 4,
+        "hand_losses": 843,
+        "hand_losses_per_min": 5.9112,
+        "misfire_rate": 0.4089,
+        "misfire_votes": {
+          "fist_after_fire": 17,
+          "immediate_redo": 3,
+          "low_confidence_trigger": 46,
+          "token_flip_around_fire": 43
+        },
+        "regrabs": 2,
+        "releases_per_drag": 1.0513,
+        "seconds": 8556.7,
+        "sessions": 6,
+        "weak_intended_fires": 73,
+        "weak_misfire_fires": 83
+      }
+    }
+  },
+  "git": "632f2e3",
+  "label": "before-cosmos",
+  "labels": {
+    "human_labels": 0,
+    "reason": "no human labels on fire / arm segments (<session>/intent/human.jsonl); labelfn_accuracy scores human labels only",
+    "sessions_with_human": [],
+    "sessions_with_tags": [
+      "20261008-231252"
+    ],
+    "status": "n/a",
+    "tags": 2
+  },
+  "model": {
+    "exists": true,
+    "path": "/Users/shmul/Library/Application Support/visual-actions/models/gestures.joblib",
+    "resolved": "/Users/shmul/Library/Application Support/visual-actions/models/gestures.joblib",
+    "sha256": "d33ede93c2738e80"
+  },
+  "paths": {
+    "datasets": "/Users/shmul/Library/Application Support/visual-actions/datasets",
+    "sessions": "/Users/shmul/Library/Application Support/visual-actions/sessions"
+  },
+  "run_time_s": 13.6,
+  "sessions": [
+    "20261009-142733",
+    "20261009-132737",
+    "20261009-124833",
+    "20261009-120535",
+    "20261009-104823",
+    "20261009-101425"
+  ],
+  "sessions_requested": 6
+}
