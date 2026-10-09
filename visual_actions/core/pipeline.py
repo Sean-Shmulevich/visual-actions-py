@@ -48,7 +48,7 @@ class Pipeline:
             frame_width_px=config.camera.width,
         )
         d = config.drag
-        self.pinch = PinchDetector(d.pinch_on, d.pinch_off, d.debounce_frames)
+        self.pinch = PinchDetector(d.pinch_on, d.pinch_off, d.debounce_frames, d.release_frames)
         if mover is None:
             mover = AutomationMover(dispatcher.automation)
         sw, sh = _screen_size(mover)
@@ -56,6 +56,7 @@ class Pipeline:
             PointerMap(sw, sh, ReachBox(d.box_x0, d.box_x1, d.box_y0, d.box_y1), d.depth_gain, d.ref_hand_scale),
             d.smooth_min_cutoff,
             d.smooth_beta,
+            d.glitch_px,
         )
         snap = None
         if d.enabled and d.snap_enabled:
@@ -71,7 +72,19 @@ class Pipeline:
                 ),
             )
         self.drag = (
-            DragController(bus, mover, pointer, gain=d.gain, snap=snap, focus_on_grab=d.focus_on_grab) if d.enabled else None
+            DragController(
+                bus,
+                mover,
+                pointer,
+                gain=d.gain,
+                snap=snap,
+                focus_on_grab=d.focus_on_grab,
+                release_grace_ns=d.release_grace_ms * 1_000_000,
+                regrab_px=d.regrab_px,
+                move_deadband_px=d.move_deadband_px,
+            )
+            if d.enabled
+            else None
         )
         self.engine = ModeEngine(
             bus=bus,
@@ -85,6 +98,7 @@ class Pipeline:
         )
         self._last_veto_ns = -(10**18)
         self._lost_at_ns: int | None = None  # a HandLost not yet applied to the smoother and pinch detector
+        self._release_forming = False  # the pinch was opening when the hand was lost
         bus.subscribe(HandSeen, self._on_hand_seen)
         bus.subscribe(HandLost, self._on_hand_lost)
         bus.subscribe(Tick, self._on_tick)
@@ -99,10 +113,13 @@ class Pipeline:
             # the token window and the pinch state, so the returning hand resumes with its history
             # instead of re-forming the pinch (2 frames) and refilling the window (250 ms).
             if hf.t_ns - self._lost_at_ns >= self.config.timing.lost_blip_ms * 1_000_000:
+                if self._release_forming:
+                    self.engine.on_release_at_loss(self._lost_at_ns)
                 self.smoother.reset()
                 self.pinch.reset()
             else:
                 self.pinch.blip()
+            self._release_forming = False
             self._lost_at_ns = None
             self.engine.on_hand_seen(hf.t_ns)
         pev = self.pinch.update(hf)
@@ -137,9 +154,15 @@ class Pipeline:
 
     def _on_hand_lost(self, ev: HandLost) -> None:
         self._lost_at_ns = ev.t_ns  # smoother and pinch reset only if the hand stays away past lost_blip_ms
+        # The fingers were opening as the hand left: once this is clearly not a blip, that was a
+        # release (drop in place), not a drag to hold for the hand's return.
+        self._release_forming = self.pinch.pending_release
         self.engine.on_hand_lost(ev.t_ns)
 
     def _on_tick(self, ev: Tick) -> None:
+        if self._release_forming and self._lost_at_ns is not None and ev.t_ns - self._lost_at_ns >= self.config.timing.lost_blip_ms * 1_000_000:
+            self._release_forming = False
+            self.engine.on_release_at_loss(self._lost_at_ns)
         self.engine.on_tick(ev.t_ns)
 
 

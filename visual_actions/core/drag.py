@@ -65,8 +65,18 @@ class DragController:
         gain: float = 1.0,
         snap: SnapEngine | None = None,
         focus_on_grab: bool = True,
+        release_grace_ns: int = 400_000_000,
+        regrab_px: float = 150.0,
+        move_deadband_px: float = 1.0,
     ) -> None:
         self.focus_on_grab = focus_on_grab
+        # A release is not final for `release_grace_ns`: a pinch that re-forms within it near the
+        # same spot continues the drag (98 of 325 recorded drags re-grabbed within 0.5 s because
+        # the carried pinch briefly read as open). The snap commits when the grace runs out.
+        self.release_grace_ns = release_grace_ns
+        self.regrab_px = regrab_px
+        self.move_deadband_px = move_deadband_px
+        self._releasing: tuple[int, float, float] | None = None  # (t_ns, sx, sy) of a pending release
         self.bus = bus
         self.mover = mover
         self.pointer = pointer
@@ -87,6 +97,10 @@ class DragController:
     def dragging(self) -> bool:
         return self.handle is not None
 
+    @property
+    def releasing(self) -> bool:
+        return self._releasing is not None
+
     # -- pinch input ------------------------------------------------------------
 
     def on_pinch(self, ev: PinchEvent) -> bool:
@@ -96,6 +110,22 @@ class DragController:
                 return False  # a release while suspended is handled by the engine (drop)
             self._resume(ev)
             return True
+        if self._releasing is not None:
+            if ev.phase is not PinchPhase.START:
+                return True  # nothing to do with moves of an open hand
+            t_end, rx, ry = self._releasing
+            self.pointer.reset()
+            sx, sy = self.pointer.update(ev.t_ns, ev.x, ev.y, ev.hand_scale)
+            if ev.t_ns - t_end <= self.release_grace_ns and abs(sx - rx) <= self.regrab_px and abs(sy - ry) <= self.regrab_px:
+                # the same pinch, back: continue from where the window is, no drop, no snap
+                self._releasing = None
+                self._grab_pointer = (sx, sy)
+                self._grab_origin = self._pos or self._grab_origin
+                self.bus.publish(DragEvent(ev.t_ns, DragPhase.RESUME, self.mover.label(self.handle), sx, sy))
+                return True
+            self._releasing = None
+            self._end(t_end, rx, ry)  # a different grab: finish the old drag first
+            return self._start(ev)
         if ev.phase is PinchPhase.START:
             return self._start(ev)
         if self.handle is None:
@@ -104,12 +134,32 @@ class DragController:
         if ev.phase is PinchPhase.MOVE:
             self._move(ev.t_ns, sx, sy)
             return True
+        if self.release_grace_ns > 0:
+            self._releasing = (ev.t_ns, sx, sy)  # final only once the grace passes (on_tick)
+            return True
         self._end(ev.t_ns, sx, sy)
         return True
 
+    def on_tick(self, t_ns: int) -> bool:
+        """Commit a pending release once its grace has passed. True when the drag ended here."""
+        if self._releasing is None:
+            return False
+        t_end, sx, sy = self._releasing
+        if t_ns - t_end < self.release_grace_ns:
+            return False
+        self._releasing = None
+        self._end(t_end, sx, sy)
+        return True
+
     def suspend(self, t_ns: int) -> None:
-        """Hand lost mid-drag: keep the window where it is, clear any snap preview, wait."""
+        """Hand lost mid-drag: keep the window where it is, clear any snap preview, wait.
+        A release that was waiting for its grace is committed instead: the hand is gone."""
         if self.handle is None or self.suspended:
+            return
+        if self._releasing is not None:
+            t_end, sx, sy = self._releasing
+            self._releasing = None
+            self._end(t_end, sx, sy)
             return
         self.suspended = True
         self._set_preview(t_ns, None)
@@ -130,6 +180,7 @@ class DragController:
         """Drop in place, never snap (hand lost for good, or came back without a pinch)."""
         if self.handle is not None:
             self.suspended = False
+            self._releasing = None
             self._set_preview(t_ns, None)
             if self.snap is not None:
                 self.snap.reset()
@@ -176,7 +227,8 @@ class DragController:
         assert self._grab_pointer is not None and self._grab_origin is not None
         nx = self._grab_origin[0] + (sx - self._grab_pointer[0]) * self.gain
         ny = self._grab_origin[1] + (sy - self._grab_pointer[1]) * self.gain
-        if self.mover.move(self.handle, nx, ny):
+        settled = self._pos is not None and abs(nx - self._pos[0]) < self.move_deadband_px and abs(ny - self._pos[1]) < self.move_deadband_px
+        if not settled and self.mover.move(self.handle, nx, ny):
             self.moves += 1
             self._pos = (nx, ny)
         if self.snap is not None:
@@ -201,6 +253,7 @@ class DragController:
         label = self.mover.label(self.handle)
         self.handle = None
         self.suspended = False
+        self._releasing = None
         self._grab_pointer = None
         self._grab_origin = None
         self._pos = None

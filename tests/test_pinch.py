@@ -28,7 +28,7 @@ def test_pinch_point_and_scale():
 
 
 def test_detector_hysteresis_and_debounce():
-    det = PinchDetector(on_threshold=0.3, off_threshold=0.5, debounce_frames=2)
+    det = PinchDetector(on_threshold=0.3, off_threshold=0.5, debounce_frames=2, release_frames=2)
     frames = [hand_frame("open_palm", i * 33_000_000, mirror_to_raw=False) for i in range(3)]
     frames += [hand_frame("pinch", (3 + i) * 33_000_000, mirror_to_raw=False) for i in range(5)]
     frames += [hand_frame("open_palm", (8 + i) * 33_000_000, mirror_to_raw=False) for i in range(3)]

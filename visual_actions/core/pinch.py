@@ -51,12 +51,22 @@ class PinchDetector:
     """Hysteresis: pinched when distance < on_threshold, released when > off_threshold.
     `debounce_frames` consecutive frames are needed to change state."""
 
-    def __init__(self, on_threshold: float = 0.3, off_threshold: float = 0.5, debounce_frames: int = 2) -> None:
+    def __init__(
+        self,
+        on_threshold: float = 0.3,
+        off_threshold: float = 0.55,
+        debounce_frames: int = 2,
+        release_frames: int | None = None,
+    ) -> None:
         if off_threshold <= on_threshold:
             raise ValueError("off_threshold must exceed on_threshold")
         self.on_threshold = on_threshold
         self.off_threshold = off_threshold
         self.debounce_frames = debounce_frames
+        # A release needs more consecutive open frames than a grab needs closed ones: while a pinch
+        # is carried the thumb is often occluded for a few frames and the distance spikes (2026-10-08
+        # drags: pinched p97 0.34, frame-to-frame noise 0.08), which read as release-then-grab flaps.
+        self.release_frames = debounce_frames + 1 if release_frames is None else release_frames
         self.pinched = False
         self._pending = 0
         self._last: tuple[int, float, float, float, float] | None = None
@@ -75,6 +85,11 @@ class PinchDetector:
         `debounce_frames` fresh frames after the return."""
         self._pending = 0
 
+    @property
+    def pending_release(self) -> bool:
+        """Pinched, but the last frame(s) read open: a release is forming."""
+        return self.pinched and self._pending > 0
+
     def update(self, hf: HandFrame) -> PinchEvent | None:
         d = pinch_distance(hf)
         x, y = pinch_point(hf)
@@ -83,7 +98,7 @@ class PinchDetector:
         want = d < self.on_threshold if not self.pinched else not (d > self.off_threshold)
         if want != self.pinched:
             self._pending += 1
-            if self._pending >= self.debounce_frames:
+            if self._pending >= (self.debounce_frames if want else self.release_frames):
                 self.pinched = want
                 self._pending = 0
                 return PinchEvent(hf.t_ns, PinchPhase.START if want else PinchPhase.END, x, y, s, d)

@@ -120,8 +120,13 @@ class LeaderConfig:
 class DragConfig:
     enabled: bool = True
     pinch_on: float = 0.3  # canonical thumb-index distance to start a pinch
-    pinch_off: float = 0.5  # distance to release (hysteresis)
-    debounce_frames: int = 2
+    pinch_off: float = 0.55  # distance to release (hysteresis); the user's pinched p97 is 0.34, released p50 0.76
+    debounce_frames: int = 2  # closed frames in a row to grab
+    release_frames: int = 3  # open frames in a row to release (a carried pinch flickers open for a frame or two)
+    release_grace_ms: int = 400  # a release re-grabbed within this, near the same spot, continues the drag
+    regrab_px: float = 150.0  # how near (screen px, per axis) that re-grab must be
+    move_deadband_px: float = 1.0  # window moves under this are skipped (no sub-pixel AX traffic)
+    glitch_px: float = 24.0  # a one-frame pointer jump this big from a still hand is held a frame and dropped if it comes back
     box_x0: float = 0.15  # reach box in the camera frame mapped to the full screen
     box_x1: float = 0.85
     box_y0: float = 0.15
@@ -135,8 +140,8 @@ class DragConfig:
     ref_hand_scale: float = 0.12  # measured typical seating distance; 0.12 ~ 55 cm from a MacBook camera
     gain: float = 1.0  # window pixels per pointer pixel
     focus_on_grab: bool = True  # a grabbed window becomes active and the pane under the pinch gets keyboard focus
-    smooth_min_cutoff: float = 1.5
-    smooth_beta: float = 0.05
+    smooth_min_cutoff: float = 0.6  # One Euro: lower = calmer still hand (measured 2026-10-09 on 325 drags)
+    smooth_beta: float = 0.01  # One Euro speed term in screen px; 0.05 let tracker noise open the cutoff
     snap_enabled: bool = True  # our own edge snapping (BetterTouchTool and native tiling only see real mouse drags)
     snap_edge_px: float = 28.0  # pointer this close to a screen edge arms a half-screen zone
     snap_corner_px: float = 110.0  # this close to both edges arms a quarter zone

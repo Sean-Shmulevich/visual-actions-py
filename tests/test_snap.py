@@ -100,6 +100,7 @@ def test_release_in_zone_snaps_and_previews():
     drag_to_right_edge(c)
     assert previews and previews[-1].zone == "right"
     c.on_pinch(pev(PinchPhase.END, 400 * MS, 0.997, 0.5))
+    c.on_tick(900 * MS)
     w = wins.windows[0]
     assert (w["x"], w["y"], w["w"], w["h"]) == (720, 25, 720, 875)
     assert drags[-1].phase is DragPhase.END and drags[-1].snapped == "right"
@@ -111,6 +112,7 @@ def test_release_outside_zone_just_drops():
     c.on_pinch(pev(PinchPhase.START, 0, 0.5, 0.5))
     c.on_pinch(pev(PinchPhase.MOVE, 33 * MS, 0.55, 0.55))
     c.on_pinch(pev(PinchPhase.END, 66 * MS, 0.55, 0.55))
+    c.on_tick(566 * MS)
     w = wins.windows[0]
     assert (w["w"], w["h"]) == (500, 300) and drags[-1].snapped is None
     assert all(p.zone is None for p in previews)
@@ -120,6 +122,7 @@ def test_redrag_of_snapped_window_restores_its_size():
     c, wins, previews, drags = make()
     drag_to_right_edge(c)
     c.on_pinch(pev(PinchPhase.END, 400 * MS, 0.997, 0.5))
+    c.on_tick(900 * MS)
     assert wins.windows[0]["w"] == 720
     # grab it again in the middle of the snapped half and move a little
     assert c.on_pinch(pev(PinchPhase.START, 1000 * MS, 0.75, 0.5))
@@ -128,6 +131,7 @@ def test_redrag_of_snapped_window_restores_its_size():
     assert w["x"] <= 1080 <= w["x"] + w["w"] and w["y"] <= 450 <= w["y"] + w["h"]  # pointer still inside
     c.on_pinch(pev(PinchPhase.MOVE, 1033 * MS, 0.70, 0.5))
     c.on_pinch(pev(PinchPhase.END, 1066 * MS, 0.70, 0.5))
+    c.on_tick(1566 * MS)
     assert drags[-1].snapped is None and wins.windows[0]["w"] == 500
 
 

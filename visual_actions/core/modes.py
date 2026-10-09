@@ -314,7 +314,7 @@ class ModeEngine:
             if self.drag.suspended:
                 self._returned_at_ns = None  # pinch is back: resume
             self.drag.on_pinch(ev)
-            if ev.phase is PinchPhase.END:
+            if not self.drag.dragging:
                 self._after_command(ev.t_ns, None)  # dropped: grab another window, or anything else
 
     def _adjust_bound(self) -> bool:
@@ -401,6 +401,14 @@ class ModeEngine:
         self._refresh_on_return = False
         self._go(ARMED, t_ns)
 
+    def on_release_at_loss(self, t_ns: int) -> None:
+        """The pinch was opening when the hand left the frame and it has not come straight
+        back: the person released and pulled away. The window is dropped where it is (no snap:
+        the pointer never reached a zone) and the menu stays open, as after any release."""
+        if self.state == DRAGGING and self.drag is not None:
+            self.drag.cancel(t_ns)
+            self._after_command(t_ns, None)
+
     def on_hand_seen(self, t_ns: int) -> None:
         """A frame with a hand, before any token. A paused hold stops its grace clock here, since
         the next palm token can be a smoothing window (250 ms) away; the other states keep
@@ -428,9 +436,14 @@ class ModeEngine:
         if self.state == DRAGGING and self.drag is not None:
             self._returned_at_ns = None
             self.drag.suspend(t_ns)  # window stays; the drag resumes if the hand returns pinching
+            if not self.drag.dragging:
+                self._after_command(t_ns, None)  # a pending release was committed instead
 
     def on_tick(self, t_ns: int) -> None:
         if self.state == DRAGGING:
+            if self.drag is not None and self.drag.on_tick(t_ns):
+                self._after_command(t_ns, None)  # a release outlived its re-grab grace
+                return
             if (
                 self.drag is not None
                 and self.drag.suspended

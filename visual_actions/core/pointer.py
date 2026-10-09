@@ -83,16 +83,63 @@ class OneEuroFilter:
 
 
 class SmoothedPointer:
-    def __init__(self, pmap: PointerMap, min_cutoff: float = 1.5, beta: float = 0.05) -> None:
+    """Screen point from a hand point: reach-box map, one-frame glitch rejection, One Euro.
+
+    Parameters measured on 325 recorded drags (2026-10-09). With screen pixels as units the
+    One Euro speed term must be small: beta 0.05 let 270 px/s of tracker noise open the
+    cutoff to ~15 Hz, so the filter passed the jitter through (still-hand step p90 4.9 px).
+    min_cutoff 0.6 / beta 0.01 halves that (2.9 px) for ~17 px of lag at 600 px/s.
+    Tracker glitches (a single frame 20..40 px away, then back) are not noise and no linear
+    filter removes them without lag: a jump of `glitch_px` from a slow-moving hand is held
+    for one frame; if the next frame comes back it is dropped, otherwise both are applied.
+    """
+
+    STILL_PX_S = 60.0  # slower than this over the recent frames counts as a still hand
+
+    def __init__(self, pmap: PointerMap, min_cutoff: float = 0.6, beta: float = 0.01, glitch_px: float = 24.0) -> None:
         self.pmap = pmap
         self.fx = OneEuroFilter(min_cutoff, beta)
         self.fy = OneEuroFilter(min_cutoff, beta)
+        self.glitch_px = glitch_px
+        self._raw: list[tuple[float, float, float]] = []  # (t, sx, sy) recent raw screen points
+        self._suspect: tuple[int, float, float] | None = None  # a jump held back for one frame
+        self._out: tuple[float, float] | None = None
 
     def reset(self) -> None:
         self.fx.reset()
         self.fy.reset()
+        self._raw.clear()
+        self._suspect = None
+        self._out = None
+
+    def _slow(self) -> bool:
+        if len(self._raw) < 3:
+            return False
+        t0, x0, y0 = self._raw[0]
+        t1, x1, y1 = self._raw[-1]
+        dt = t1 - t0
+        return dt > 0 and math.hypot(x1 - x0, y1 - y0) / dt < self.STILL_PX_S
+
+    def _apply(self, t_ns: int, sx: float, sy: float) -> tuple[float, float]:
+        t = t_ns / 1e9
+        self._raw.append((t, sx, sy))
+        del self._raw[:-5]
+        self._out = (self.fx(sx, t), self.fy(sy, t))
+        return self._out
 
     def update(self, t_ns: int, x: float, y: float, hand_scale: float | None = None) -> tuple[float, float]:
         sx, sy = self.pmap.to_screen(x, y, hand_scale)
-        t = t_ns / 1e9
-        return (self.fx(sx, t), self.fy(sy, t))
+        if self._suspect is not None:
+            st_ns, px, py = self._suspect
+            self._suspect = None
+            _, lx, ly = self._raw[-1]
+            if math.hypot(sx - lx, sy - ly) < self.glitch_px / 2:
+                return self._apply(t_ns, sx, sy)  # the jump was a one-frame glitch: dropped
+            self._apply(st_ns, px, py)  # a real move: the held frame goes in first
+            return self._apply(t_ns, sx, sy)
+        if self.glitch_px > 0 and self._raw and self._slow() and self._out is not None:
+            _, lx, ly = self._raw[-1]
+            if math.hypot(sx - lx, sy - ly) >= self.glitch_px:
+                self._suspect = (t_ns, sx, sy)
+                return self._out  # hold one frame
+        return self._apply(t_ns, sx, sy)

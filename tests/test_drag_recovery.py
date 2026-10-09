@@ -62,6 +62,7 @@ def test_hand_back_pinching_resumes_without_a_jump():
     eng.on_pinch(pev(PinchPhase.MOVE, int(2.1 * S), 0.3, 0.8))  # +100 px relative to the new anchor
     assert round(wins.windows[0]["x"]) == 500
     eng.on_pinch(pev(PinchPhase.END, int(2.2 * S), 0.3, 0.8))
+    eng.on_tick(int(2.7 * S))  # past the re-grab grace
     assert eng.state == ARMED and drags[-1].phase is DragPhase.END  # a normal release: back in the menu
 
 

@@ -52,6 +52,7 @@ def test_controller_moves_window_by_pointer_delta():
     c.on_pinch(pev(PinchPhase.MOVE, 66_000_000, 0.4, 0.3))  # -100, -100 from grab
     assert round(wins.windows[0]["x"]) == 200 and round(wins.windows[0]["y"]) == 100
     c.on_pinch(pev(PinchPhase.END, 99_000_000, 0.4, 0.3))
+    c.on_tick(99_000_000 + 500_000_000)  # the release is final once its re-grab grace passes
     assert not c.dragging and events[-1].phase is DragPhase.END
     assert c.moves == 2
 
@@ -95,6 +96,7 @@ def test_engine_armed_pinch_enters_dragging_and_release_returns_idle():
     eng.on_token(Token(int(1.35 * S), "h_left", 1.0, Hand.RIGHT, True))
     assert eng.state == DRAGGING
     eng.on_pinch(pev(PinchPhase.END, int(1.4 * S), 0.7, 0.45))
+    eng.on_tick(int(1.9 * S))  # past the re-grab grace
     assert eng.state == ARMED  # dropped: grab another window without the palm again
     assert [m.new for m in modes][-3:] == [ARMED, DRAGGING, ARMED]
     assert [d.phase for d in drags] == [DragPhase.START, DragPhase.MOVE, DragPhase.END]

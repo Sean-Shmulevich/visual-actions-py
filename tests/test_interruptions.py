@@ -182,8 +182,10 @@ def test_blip_forgets_a_half_formed_pinch_change():
     assert pipe.pinch.pinched and pipe.pinch._pending == 1
     bus.publish(HandLost(int((t + 1 / 30) * S)))
     bus.publish(HandSeen(hand_frame("open_palm", int((t + 0.1) * S))))
-    assert pipe.pinch.pinched  # the frame beside the loss does not count: a release needs 2 fresh frames
+    assert pipe.pinch.pinched  # the frame beside the loss does not count: a release needs release_frames fresh ones
     bus.publish(HandSeen(hand_frame("open_palm", int((t + 0.1 + 1 / 30) * S))))
+    assert pipe.pinch.pinched  # two of three
+    bus.publish(HandSeen(hand_frame("open_palm", int((t + 0.1 + 2 / 30) * S))))
     assert not pipe.pinch.pinched
 
 
