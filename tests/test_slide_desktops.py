@@ -76,3 +76,45 @@ def test_unsure_slide_shape_is_ignored():
     eng.on_token(tok("point_up", 1.2, 0.50, conf=0.2, still=True))
     eng.on_token(tok("point_up", 1.4, 0.70, conf=0.2))
     assert fired == []
+
+
+def make_flick():
+    bus, fired = Bus(), []
+    flick = lambda a: Action(a.kind, a.name, a.args + (("flick", "true"),))  # noqa: E731
+    eng = ModeEngine(
+        bus,
+        Bindings([Binding("window", "point_up:left", flick(LEFT)), Binding("window", "point_up:right", flick(RIGHT))]),
+        Timing(leader_hold_ns=1 * S, confidence_gain=1.0, repeat_slide=0.10),
+        fire=lambda a, t: fired.append(a.name),
+    )
+    for i in range(5):
+        eng.on_token(Token(i * 250_000_000, "open_palm", 1.0, Hand.RIGHT, True, x=0.5, y=0.5))
+    eng.on_tick(int(1.05 * S))
+    assert eng.state == ARMED
+    return eng, fired
+
+
+def test_flick_out_and_back_is_one_switch_and_the_return_is_not_the_opposite():
+    eng, fired = make_flick()
+    eng.on_token(tok("point_up", 1.2, 0.50, still=True))  # anchored at the centre
+    eng.on_token(tok("point_up", 1.4, 0.38))  # 0.12 to the left: fires
+    assert fired == ["Desktop left"]
+    eng.on_token(tok("point_up", 1.6, 0.30))  # further left: nothing more
+    eng.on_token(tok("point_up", 1.8, 0.42))  # coming back past the fire point: not a right
+    assert fired == ["Desktop left"]
+    eng.on_token(tok("point_up", 2.0, 0.52))  # back at the centre
+    eng.on_token(tok("point_up", 2.2, 0.64))  # a new flick to the right
+    assert fired == ["Desktop left", "Desktop right"]
+    eng.on_token(tok("point_up", 2.4, 0.50))  # home
+    eng.on_token(tok("point_up", 2.6, 0.37))  # and left again
+    assert fired == ["Desktop left", "Desktop right", "Desktop left"]
+
+
+def test_flick_needs_the_return_before_a_second_switch_the_same_way():
+    eng, fired = make_flick()
+    eng.on_token(tok("point_up", 1.2, 0.50, still=True))
+    eng.on_token(tok("point_up", 1.4, 0.38))
+    eng.on_token(tok("point_up", 1.6, 0.26))  # kept going left: still one switch
+    eng.on_token(tok("point_up", 1.8, 0.26, still=True))  # resting out there does not re-anchor mid-flick
+    eng.on_token(tok("point_up", 2.0, 0.14))
+    assert fired == ["Desktop left"]

@@ -28,12 +28,14 @@ DRAGGING--pinch END--------------------> ARMED (chaining) / IDLE
 DRAGGING--hand lost--------------------> DRAGGING, suspended (window stays, red frame)
 suspended--pinch back within grace-----> DRAGGING resumed from the window's current place
 suspended--hand back unpinched / grace-> IDLE (dropped in place)
-ARMED   --slide shape (bindings "<shape>:left|right|up|down")--> the wrist is anchored; a travel of
-                                           repeat_slide (or the binding's own "step") along the dominant
-                                           axis fires the action of that direction and re-anchors (chain);
-                                           a still hand re-anchors so drift never fires; the shape itself
-                                           never fires on sight. The leader shape may be a slide shape:
-                                           the palm that armed the menu scrolls as soon as it moves.
+ARMED   --slide shape (bindings "<shape>:left|right|up|down")--> the wrist is anchored once the shape
+                                           is still; a travel of repeat_slide (or the binding's own "step")
+                                           along the dominant axis fires the action of that direction.
+                                           Continuous (scroll): re-anchors at each step, so travel keeps
+                                           firing. Flick ("flick": true, desktops): the anchor stays, the
+                                           return stroke fires nothing, and the next stroke counts only
+                                           once the hand is back near the anchor: out-and-back is one
+                                           command. A still hand re-anchors; the shape itself never fires.
 ARMED   --repeatable action fires------> REPEAT(deadline = now + repeat_window)
 REPEAT  --same shape, wrist slid sideways >= repeat_slide--> fire again, deadline refreshed
 REPEAT  --deadline-----------------------> ARMED (chaining) / IDLE
@@ -160,6 +162,7 @@ class ModeEngine:
         self._slide_shape: str | None = None  # ARMED: the slide shape being tracked, and where its wrist was anchored
         self._slide_anchor = (0.5, 0.5)
         self._slide_gap = 0  # other tokens seen since the slide shape; SLIDE_GAP_TOKENS of them drop the anchor
+        self._slide_out: str | None = None  # flick slides: the direction fired, until the hand is back at the anchor
 
     def projected_hold_ns(self, t_ns: int) -> float:
         """Evidence extrapolated to t_ns at the last token's rate, so arming and the ring are smooth."""
@@ -358,6 +361,7 @@ class ModeEngine:
             # not a slide (2026-10-09: point-up switched desktops when the hand arrived quickly)
             if tok.still:
                 self._slide_shape, self._slide_anchor = tok.name, (tok.x, tok.y)
+                self._slide_out = None
             return True
         dx, dy = tok.x - self._slide_anchor[0], tok.y - self._slide_anchor[1]  # user frame: +x right, +y down
         step = self.timing.repeat_slide
@@ -367,11 +371,22 @@ class ModeEngine:
                 break
             except ValueError:
                 pass
-        if max(abs(dx), abs(dy)) >= self.SLIDE_JUMP * step:
+        flick = any(a.arg("flick") in ("true", "True", "1") for a in slide.values())
+        travel = max(abs(dx), abs(dy))
+        if self._slide_out is not None:
+            # flick: the stroke fired on the way out; the way back to the anchor is the same gesture,
+            # not the opposite command, and nothing fires again until the hand is back near the anchor
+            if travel <= step / 2:
+                self._slide_out = None
+            return True
+        if travel >= self.SLIDE_JUMP * step:
             self._slide_anchor = (tok.x, tok.y)  # a jump: re-anchor, never fire
-        elif max(abs(dx), abs(dy)) >= step:
+        elif travel >= step:
             direction = ("right" if dx > 0 else "left") if abs(dx) >= abs(dy) else ("down" if dy > 0 else "up")
-            self._slide_anchor = (tok.x, tok.y)
+            if flick:
+                self._slide_out = direction  # the anchor stays: that is where the hand returns to
+            else:
+                self._slide_anchor = (tok.x, tok.y)  # continuous: each step from the last fires again
             action = slide.get(direction)
             if action is not None:
                 self._deadline_ns = tok.t_ns + self.timing.command_timeout_ns

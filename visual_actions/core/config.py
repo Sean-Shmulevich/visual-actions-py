@@ -225,8 +225,10 @@ DEFAULT_BINDINGS: list[dict[str, Any]] = [
     {"gesture": "palm_side:down", "action": {"kind": "scroll", "name": "Scroll down", "dy": -3, "step": 0.06}},
     # One finger up is a slide shape: it never fires on sight; sliding it sideways by repeat_slide
     # switches desktops one step per slide (Mission Control's Ctrl+Arrow, posted with the fn flags).
-    {"gesture": "point_up:left", "action": {"kind": "key", "name": "Desktop left", "chord": "ctrl+left"}},
-    {"gesture": "point_up:right", "action": {"kind": "key", "name": "Desktop right", "chord": "ctrl+right"}},
+    # A flick: out to one side and back to where it started is one switch; the return stroke is not
+    # the opposite switch, and the next flick counts once the finger is back near the start.
+    {"gesture": "point_up:left", "action": {"kind": "key", "name": "Desktop left", "chord": "ctrl+left", "flick": True}},
+    {"gesture": "point_up:right", "action": {"kind": "key", "name": "Desktop right", "chord": "ctrl+right", "flick": True}},
     {"gesture": "middle_up", "action": {"kind": "open", "name": "Never gonna give you up", "target": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"}},
 ]
 
