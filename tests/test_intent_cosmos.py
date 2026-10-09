@@ -291,3 +291,33 @@ def test_cli_dispatch_runs_segments_clips_and_dry_cosmos(tmp_path: Path, capsys:
     assert "2 new verdicts" in capsys.readouterr().out
     with pytest.raises(SystemExit):
         main(["clips", str(s), "--kinds", "nope"])
+
+
+def test_self_hosted_url_needs_no_key(monkeypatch):
+    from visual_actions.intent.cosmos import DEFAULT_URL, CosmosReason
+
+    monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
+    monkeypatch.setenv("COSMOS_URL", "http://127.0.0.1:8000/v1")
+    seen = {}
+
+    class Resp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):
+            return b'{"choices":[{"message":{"content":"<answer>{\"intent\":\"dead\",\"person_present\":false,\"hand_present\":false,\"attention_to_screen\":\"unknown\",\"arm_raised_toward_camera\":false,\"face_touched\":false,\"hand_description\":\"\",\"motion\":\"still\",\"reasoning\":\"\",\"confidence\":0.9,\"sub_spans\":[]}</answer>"}}]}'
+
+    def opener(req, timeout):
+        seen["url"] = req.full_url
+        seen["auth"] = req.get_header("Authorization")
+        return Resp()
+
+    c = CosmosReason(opener=opener, media="frames")
+    assert not c.hosted and c.url == "http://127.0.0.1:8000/v1/chat/completions"
+    c._complete({"model": "x", "messages": [{"role": "system", "content": ""}, {"role": "user", "content": [{"type": "text", "text": "hi"}]}]})
+    assert seen["url"].startswith("http://127.0.0.1:8000") and seen["auth"] is None
+    monkeypatch.delenv("COSMOS_URL")
+    assert CosmosReason().url == DEFAULT_URL

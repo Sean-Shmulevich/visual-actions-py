@@ -179,8 +179,18 @@ class CosmosReason:
     last_request: dict[str, Any] | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
+        # COSMOS_URL points at a self-hosted server (vLLM / NIM, OpenAI-compatible): a base such as
+        # http://127.0.0.1:8000/v1 or the full /chat/completions path. A tunnel to a GPU box is
+        # the usual case; no key is needed there, and none is sent unless one is set.
+        env_url = os.environ.get("COSMOS_URL")
+        if env_url and self.url == DEFAULT_URL:
+            self.url = env_url.rstrip("/") + ("" if env_url.rstrip("/").endswith("/chat/completions") else "/chat/completions")
         self.api_key = self.api_key or os.environ.get("NVIDIA_API_KEY")
         self.model = self.model or os.environ.get("COSMOS_MODEL", DEFAULT_MODEL)
+
+    @property
+    def hosted(self) -> bool:
+        return self.url == DEFAULT_URL
 
     # -- request shape ---------------------------------------------------------------
     def body(self, segment: Segment, frames: list[bytes], strip: bytes | None, as_video: bool) -> dict[str, Any]:
@@ -223,8 +233,8 @@ class CosmosReason:
         return parse_verdict(text, segment, model=str(self.model), fps=self.fps)
 
     def _complete(self, body: dict[str, Any]) -> str:
-        if not self.api_key:
-            raise RuntimeError("NVIDIA_API_KEY is not set")
+        if self.hosted and not self.api_key:
+            raise RuntimeError("NVIDIA_API_KEY is not set (or set COSMOS_URL to a self-hosted server)")
         self.last_request = {k: v for k, v in body.items() if k != "messages"} | {"parts": [p["type"] for p in body["messages"][1]["content"]]}
         data = json.dumps(body).encode()
         attempt = 0
@@ -232,7 +242,10 @@ class CosmosReason:
             if self.calls >= self.max_calls:
                 raise SpendCapReached(f"spend cap of {self.max_calls} calls reached")
             self.calls += 1
-            req = urllib.request.Request(self.url, data=data, method="POST", headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json", "Accept": "application/json"})
+            headers = {"Content-Type": "application/json", "Accept": "application/json"}
+            if self.api_key:
+                headers["Authorization"] = f"Bearer {self.api_key}"
+            req = urllib.request.Request(self.url, data=data, method="POST", headers=headers)
             try:
                 with self.opener(req, self.timeout_s) as resp:
                     payload = json.loads(resp.read().decode("utf-8"))

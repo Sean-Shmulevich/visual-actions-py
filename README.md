@@ -36,3 +36,25 @@ every session is also training data). Menu bar → Open sessions folder. Disable
 While the app runs, a live dashboard is at http://127.0.0.1:8765 (menu bar → Open dashboard):
 mode, last token and confidence, camera and gate stats, timing, drag settings, bindings, and
 a rolling event log. Disable with `dashboard = false` under `[feedback]` in the config.
+
+## Cosmos on your own GPU
+
+The intent passes judge recorded moments with NVIDIA Cosmos Reason. Hosted, they use
+`NVIDIA_API_KEY`. With a GPU box that serves Cosmos through an OpenAI-compatible server
+(vLLM or NIM on its port 8000) but cannot be reached from this Mac, let the box open the
+connection instead: enable Remote Login on the Mac (System Settings → General → Sharing),
+give the box an SSH key, and from the box run
+
+```sh
+ssh -N -R 127.0.0.1:8000:127.0.0.1:8000 <user>@<mac>    # or autossh -M 0 ...
+```
+
+The box's Cosmos port then appears on the Mac as `127.0.0.1:8000`, and the passes use it with
+
+```sh
+COSMOS_URL=http://127.0.0.1:8000/v1 COSMOS_MODEL=nvidia/cosmos-reason2-8b \
+  uv run python -m visual_actions.intent cosmos <session> --limit 20
+```
+
+No key is sent to a self-hosted URL. Tailscale on both machines does the same job without
+the tunnel (point `COSMOS_URL` at the box's tailnet address).
