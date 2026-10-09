@@ -249,7 +249,7 @@ def test_adjust_publishes_settle_start_move_and_end_in_screen_points():
     assert fired == ["Volume up"] * 3  # 0.1 of travel at the centred step (0.5 / 16)
     assert events[-1].phase is AdjustPhase.MOVE and events[-1].steps == 3 and round(events[-1].ax) == 594  # anchor advanced 3 steps of 500/16 px
     pinch(eng, 2.3, PinchPhase.MOVE, 0.54, 0.42)
-    assert events[-1].steps == -1 and round(events[-1].ax) == 550
+    assert events[-1].steps == -1 and round(events[-1].ax) == 562  # one step back from 593.75
     pinch(eng, 2.4, PinchPhase.END, 0.54, 0.42)
     assert events[-1].phase is AdjustPhase.END and events[-1].steps == 3 and eng.state == ARMED
 
