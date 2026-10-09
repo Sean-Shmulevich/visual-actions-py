@@ -24,20 +24,20 @@ def fixtures(tmp_path_factory):
     return out
 
 
-def test_committed_fixture_fires_cmd_tab():
+def test_committed_fixture_fires_previous_tab():
     fired = replay(FIXTURES / "h_left.jsonl", default_config())
-    assert [f.action.name for f in fired] == ["Cmd+Tab"]
+    assert [f.action.name for f in fired] == ["Previous tab"]
     assert fired[0].ok
 
 
-def test_h_left_fires_cmd_tab(fixtures):
+def test_h_left_fires_previous_tab(fixtures):
     fired = replay(fixtures / "h_left.jsonl")
-    assert [f.action.name for f in fired] == ["Cmd+Tab"]
+    assert [f.action.name for f in fired] == ["Previous tab"]
 
 
-def test_h_right_fires_cmd_shift_tab(fixtures):
+def test_h_right_fires_next_tab(fixtures):
     fired = replay(fixtures / "h_right.jsonl")
-    assert [f.action.name for f in fired] == ["Cmd+Shift+Tab"]
+    assert [f.action.name for f in fired] == ["Next tab"]
 
 
 def test_timeout_fires_nothing(fixtures):

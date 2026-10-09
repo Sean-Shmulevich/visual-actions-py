@@ -20,8 +20,9 @@ def test_parse_chord():
 def test_default_bindings():
     b = default_config().bindings()
     a = b.lookup("window", "h_left")
-    assert a is not None and a.kind is ActionKind.KEY and a.arg("chord") == "cmd+tab"
-    assert b.lookup("window", "h_right").name == "Cmd+Shift+Tab"
+    assert a is not None and a.kind is ActionKind.KEY and a.arg("chord") == "cmd+shift+["
+    assert b.lookup("window", "h_right").name == "Next tab" and b.lookup("window", "h_right").arg("repeat") == "True"
+    assert b.lookup("window", "palm_side:up").kind is ActionKind.SCROLL and b.lookup("window", "palm_side:down").arg("dy") == "-3"
     assert b.lookup("window", "point_up") is None  # a slide shape never fires on sight
     assert b.lookup("window", "point_up:left").arg("chord") == "ctrl+left"
     assert parse_chord(b.lookup("window", "point_up:right").arg("chord")).key == "right"
@@ -36,7 +37,7 @@ def test_config_round_trip(tmp_path: Path):
     save_config(cfg, p)
     back = load_config(p)
     assert back.timing.leader_hold_s == 1.25
-    assert back.bindings().lookup("window", "h_left").name == "Cmd+Tab"
+    assert back.bindings().lookup("window", "h_left").name == "Previous tab"
 
 
 def test_saved_config_keeps_new_default_bindings(tmp_path: Path):

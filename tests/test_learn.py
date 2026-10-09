@@ -128,7 +128,7 @@ def test_replay_events_match_the_session_log_format_and_segment(tmp_path: Path):
     kinds = {e.kind for e in events}
     assert {"session", "token", "mode", "action", "hand"} <= kinds
     fire = [e for e in events if e.kind == "action"]
-    assert len(fire) == 1 and fire[0].action_name == "Cmd+Tab" and fire[0].action_ok
+    assert len(fire) == 1 and fire[0].action_name == "Previous tab" and fire[0].action_ok
     # the written log parses back to the same events, and segments see the fire and the arm
     parsed = parse_events(d / "events.log")
     assert [(e.t, e.kind, e.text) for e in parsed if e.kind != "session"] == [(e.t, e.kind, e.text) for e in events if e.kind != "session"]

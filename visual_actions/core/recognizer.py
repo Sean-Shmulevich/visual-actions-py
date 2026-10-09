@@ -41,6 +41,7 @@ TWO_UP = "two_up"
 MIDDLE_UP = "middle_up"  # you know the one
 THUMBS_UP = "thumbs_up"
 THUMBS_DOWN = "thumbs_down"
+PALM_SIDE = "palm_side"  # right hand edge-on to the camera, fingers together pointing sideways, thumb on top: the scroll hand
 
 FINGERS = (
     (INDEX_MCP, INDEX_PIP, INDEX_TIP),
@@ -98,7 +99,11 @@ class RuleRecognizer:
         thumb_fold: float = 0.6,
         thumb_cos: float = 0.6,
         thumb_wrist_max_y: float = 0.92,
+        side_width: float = 0.30,
+        side_spread: float = 0.40,
     ) -> None:
+        self.side_width = side_width
+        self.side_spread = side_spread
         self.thumb_wrist_max_y = thumb_wrist_max_y
         self.thumb_clear = thumb_clear
         self.thumb_fold = thumb_fold
@@ -117,6 +122,18 @@ class RuleRecognizer:
         thumb_idx = float(np.linalg.norm(c.pts[THUMB_TIP][:2] - c.pts[INDEX_MCP][:2]))
         all_ext = all(e >= self.extended for e in ext)
         all_curl = all(e <= self.curled for e in ext)
+        if all_ext:
+            # Edge-on hand, fingers together, pointing sideways (arm roughly horizontal): a frontal
+            # palm measures ~0.48 wide at the knuckles and ~0.60 at the tips (2026-10-08 sessions);
+            # turned on its side it foreshortens to well under half that. Checked before the open
+            # palm so the scroll hand can never arm the menu.
+            width = float(np.linalg.norm(c.pts[INDEX_MCP][:2] - c.pts[PINKY_MCP][:2]))
+            spread = float(np.linalg.norm(c.pts[INDEX_TIP][:2] - c.pts[PINKY_TIP][:2]))
+            vi = c.pts[INDEX_TIP][:2] - c.pts[INDEX_MCP][:2]
+            ni = float(np.linalg.norm(vi))
+            sideways = ni > 1e-6 and abs(vi[0]) / ni >= self.direction_cos
+            if width < self.side_width and spread < self.side_spread and sideways:
+                return PALM_SIDE, min(min(ext), max(0.0, min(1.0, (self.side_width - width) / (self.side_width / 2))))
         if all_ext and thumb_idx >= self.thumb_out:
             return OPEN_PALM, min(ext)
         thumbs = self._thumbs(c) if hf.landmarks[WRIST].y <= self.thumb_wrist_max_y else None

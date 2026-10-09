@@ -54,6 +54,10 @@ def pose(name: str) -> list[tuple[float, float]]:
     elif name == "middle_up":
         thumb = THUMB_TUCKED
         fingers = {"index": (up, False), "middle": (up, True), "ring": (up, False), "pinky": (up, False)}
+    elif name == "palm_side":  # edge-on: knuckles stacked in a thin column, fingers together pointing left, thumb up
+        thumb = [(-0.3, -0.4), (-0.35, -0.8), (-0.4, -1.2), (-0.45, -1.6)]
+        narrow = {"index": (-0.05, -1.05), "middle": (0.0, -1.0), "ring": (0.04, -0.95), "pinky": (0.08, -0.88)}
+        fingers = {f: [narrow[f], (narrow[f][0] - 0.45, narrow[f][1]), (narrow[f][0] - 0.75, narrow[f][1]), (narrow[f][0] - 1.0, narrow[f][1])] for f in MCPS}
     elif name == "pinch":  # thumb tip meets a curled index tip, other fingers relaxed-curled
         thumb = [(-0.45, -0.35), (-0.55, -0.75), (-0.45, -1.15), (-0.30, -1.45)]
         index_curl = [MCPS["index"], (-0.45, -1.42), (-0.40, -1.58), (-0.28, -1.43)]

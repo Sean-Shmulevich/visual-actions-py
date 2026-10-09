@@ -29,7 +29,7 @@ def test_dashboard_serves_page_and_live_state():
         kinds = [e["kind"] for e in s["log"]]
         assert kinds[:3] == ["drag", "action", "mode"]  # newest first
         assert s["log"][0]["snapped"] == "left"
-        assert any(b["gesture"] == "h_left" and b["action"] == "Cmd+Tab" for b in s["bindings"])
+        assert any(b["gesture"] == "h_left" and b["action"] == "Previous tab" for b in s["bindings"])
         assert s["timing"]["leader_hold_s"] == 1.5
 
         r = urllib.request.urlopen(dash.url + "/nope", timeout=3) if False else None

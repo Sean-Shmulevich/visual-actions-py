@@ -290,6 +290,19 @@ class MacWindows:
         )
         return FocusResult(el is not None or focused, detail)
 
+    def active_window(self) -> WindowInfo | None:
+        """The frontmost app's front window (list order), or None."""
+        from AppKit import NSWorkspace
+
+        app = NSWorkspace.sharedWorkspace().frontmostApplication()
+        if app is None:
+            return None
+        pid = int(app.processIdentifier())
+        for w in self.list_windows():
+            if w.pid == pid and not (not w.title and w.frame.w < TINY_PT and w.frame.h < TINY_PT):
+                return w
+        return None
+
     def forget(self, win: WindowInfo) -> None:
         self._ax_cache.pop(win.id, None)
         self._ax_cache_pid.pop(win.id, None)

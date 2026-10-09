@@ -32,6 +32,7 @@ GUIDED = [
     ("point_up", "One finger: index pointing straight up, the rest folded, thumb tucked."),
     ("two_up", "Two fingers: index and middle together pointing straight up, the rest folded."),
     ("middle_up", "Middle finger up, the rest folded. You know why."),
+    ("palm_side", "Right hand on its side, edge toward the camera, fingers together pointing to your left, thumb on top, arm level. Move it up and down slowly."),
     ("none", "Anything else: relax the hand, wave, scratch your head, rest it on the desk, use both hands."),
 ]
 

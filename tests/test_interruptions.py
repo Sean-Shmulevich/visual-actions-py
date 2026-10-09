@@ -244,11 +244,11 @@ def test_replay_armed_window_survives_two_seconds_without_a_hand(tmp_path: Path)
     p = tmp_path / "armed_gap.jsonl"
     write_session(p, [("open_palm", 2.5), ("h_left", 1.0), ("lost", 2.0), ("h_right", 0.6), ("lost", 0.5)])
     r = replay_full(p, default_config())
-    assert [f.action.name for f in r.fired] == ["Cmd+Tab", "Cmd+Shift+Tab"]
+    assert [f.action.name for f in r.fired] == ["Previous tab", "Next tab"]
     assert "idle" not in [m.new for m in r.modes]  # armed throughout the 2 s gap
     cfg = default_config()
     cfg.timing.keep_armed_on_lost = False
-    assert [f.action.name for f in replay_full(p, cfg).fired] == ["Cmd+Tab"]  # the old escape_lost drop
+    assert [f.action.name for f in replay_full(p, cfg).fired] == ["Previous tab"]  # the old escape_lost drop
 
 
 def test_replay_blip_mid_drag_resumes_on_the_first_frame_back(tmp_path: Path):
@@ -293,8 +293,8 @@ def test_replay_fast_hold_pauses_over_a_blip_and_still_arms(tmp_path: Path):
     cfg = apply_profile(default_config(), FAST)
     cfg.timing.quick_command = False  # the palm-then-gesture shortcut would hide what the hold does
     r = replay_full(p, cfg)
-    assert [f.action.name for f in r.fired] == ["Cmd+Tab"]
-    assert [m.new for m in r.modes][:3] == ["holding", "armed", "armed"]  # one hold across the blip, arm, chained fire
+    assert [f.action.name for f in r.fired] == ["Previous tab"]
+    assert [m.new for m in r.modes][:3] == ["holding", "armed", "repeat"]  # one hold across the blip, arm, a repeatable fire
     cfg.timing.hold_lost_grace_s = 0.0  # what STRICT does: the loss resets the hold, 0.5 s of palm is not a leader
     r = replay_full(p, cfg)
     assert not r.fired and [m.new for m in r.modes] == ["holding", "idle", "holding", "idle"]

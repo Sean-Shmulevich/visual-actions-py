@@ -100,7 +100,7 @@ def test_default_config_has_two_root_modes():
     assert b.lookup("media", "pinch_left").arg("verb") == "volume_down"
     for unbound in ("open_palm", "two_up", "thumbs_up", "thumbs_down"):
         assert b.lookup("media", unbound) is None
-    assert b.lookup("window", "h_left").name == "Cmd+Tab"  # window mode unchanged
+    assert b.lookup("window", "h_left").name == "Previous tab"  # window mode unchanged
 
 
 def test_config_file_without_media_still_gets_it(tmp_path):

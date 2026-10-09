@@ -24,6 +24,7 @@ from ..core.recognizer import (
     MIDDLE_UP,
     NONE,
     OPEN_PALM,
+    PALM_SIDE,
     POINT_UP,
     THUMBS_DOWN,
     THUMBS_UP,
@@ -38,7 +39,7 @@ from ..paths import datasets_dir, models_dir
 # shapes of pruned features (three_up), derived files (no_pinch). "pinch" is not a token
 # the recognizer emits; the model learns it so the pinch detector's shape is not read as fist.
 CLASSES: frozenset[str] = frozenset(
-    {NONE, OPEN_PALM, FIST, H_LEFT, H_RIGHT, POINT_UP, TWO_UP, MIDDLE_UP, THUMBS_UP, THUMBS_DOWN, "pinch"}
+    {NONE, OPEN_PALM, FIST, H_LEFT, H_RIGHT, POINT_UP, TWO_UP, MIDDLE_UP, THUMBS_UP, THUMBS_DOWN, PALM_SIDE, "pinch"}
 )
 
 

@@ -6,7 +6,7 @@ same interfaces.
 
 | Root gesture (hold ~1 s) | Mode | Commands |
 |---|---|---|
-| Open palm | window | H left/right: Cmd+Tab / Cmd+Shift+Tab · one finger up, then slide it left / right: previous / next desktop (one step per slide, chainable) · pinch: drag the window under your hand |
+| Open palm | window | hand on its side (edge to the camera, fingers together pointing left, arm level), moved up / down: scroll the active window · H left / right: previous / next tab (slide to repeat) · one finger up, then slide it left / right: previous / next desktop (one step per slide, chainable) · pinch: drag the window under your hand |
 | Peace sign | media | point up: play/pause · H left / right: next / previous track · pinch, hold still a moment, then move toward your right / left: volume up / down, one step per ~5 % of frame width; the popup shows the live system volume; release to finish |
 
 A menu stays open after each command, so commands chain without the root gesture: the 5 s timeout restarts after every command, and repeating the same command needs the hand to change shape first. A fist closes the menu (as does the timeout); set `timing.chain_commands = false` for one command per root gesture. A fist cancels in every mode. Media commands post the system media keys, so they drive

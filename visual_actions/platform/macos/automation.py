@@ -99,7 +99,13 @@ class MacAutomation:
             self._post(MOD_KEYCODES[m], False, 0)
 
     def scroll(self, dx: int, dy: int) -> None:
+        """Scroll the active window: the wheel event is routed by its location, so it is posted at
+        the centre of the frontmost app's front window (falling back to the mouse position)."""
         ev = self._q.CGEventCreateScrollWheelEvent(None, self._q.kCGScrollEventUnitLine, 2, dy, dx)
+        target = self.windows.active_window()
+        if target is not None:
+            f = target.frame
+            self._q.CGEventSetLocation(ev, self._q.CGPointMake(f.x + f.w / 2, f.y + f.h / 2))
         self._q.CGEventPost(self._q.kCGHIDEventTap, ev)
 
     def set_window_frame(self, target: WindowRef, frame: Rect) -> None:

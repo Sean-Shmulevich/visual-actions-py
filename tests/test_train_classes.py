@@ -18,4 +18,4 @@ def test_unknown_directories_are_ignored_with_a_warning(tmp_path: Path, capsys: 
 
 
 def test_class_list_covers_the_recognizer_tokens():
-    assert {"none", "open_palm", "fist", "h_left", "h_right", "point_up", "two_up", "middle_up", "thumbs_up", "thumbs_down", "pinch"} == set(CLASSES)
+    assert {"none", "open_palm", "fist", "h_left", "h_right", "point_up", "two_up", "middle_up", "thumbs_up", "thumbs_down", "palm_side", "pinch"} == set(CLASSES)

@@ -216,8 +216,13 @@ class Config:
 
 
 DEFAULT_BINDINGS: list[dict[str, Any]] = [
-    {"gesture": "h_left", "action": {"kind": "key", "name": "Cmd+Tab", "chord": "cmd+tab"}},
-    {"gesture": "h_right", "action": {"kind": "key", "name": "Cmd+Shift+Tab", "chord": "cmd+shift+tab"}},
+    {"gesture": "h_left", "action": {"kind": "key", "name": "Previous tab", "chord": "cmd+shift+[", "repeat": True}},
+    {"gesture": "h_right", "action": {"kind": "key", "name": "Next tab", "chord": "cmd+shift+]", "repeat": True}},
+    # The scroll hand: right hand turned edge-on to the camera, fingers together pointing sideways,
+    # arm roughly horizontal. Moving it up or down scrolls the active window, one scroll per 6 % of
+    # frame height (the binding's own step), chaining. It is a slide shape: it never fires on sight.
+    {"gesture": "palm_side:up", "action": {"kind": "scroll", "name": "Scroll up", "dy": 3, "step": 0.06}},
+    {"gesture": "palm_side:down", "action": {"kind": "scroll", "name": "Scroll down", "dy": -3, "step": 0.06}},
     # One finger up is a slide shape: it never fires on sight; sliding it sideways by repeat_slide
     # switches desktops one step per slide (Mission Control's Ctrl+Arrow, posted with the fn flags).
     {"gesture": "point_up:left", "action": {"kind": "key", "name": "Desktop left", "chord": "ctrl+left"}},

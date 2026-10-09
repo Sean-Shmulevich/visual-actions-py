@@ -28,10 +28,12 @@ DRAGGING--pinch END--------------------> ARMED (chaining) / IDLE
 DRAGGING--hand lost--------------------> DRAGGING, suspended (window stays, red frame)
 suspended--pinch back within grace-----> DRAGGING resumed from the window's current place
 suspended--hand back unpinched / grace-> IDLE (dropped in place)
-ARMED   --slide shape (bindings "<shape>:left" / "<shape>:right")--> the wrist is anchored; a sideways
-                                           travel >= repeat_slide fires the action of that direction and
-                                           re-anchors (chain); a still hand re-anchors so drift never fires;
-                                           the shape itself never fires on sight
+ARMED   --slide shape (bindings "<shape>:left|right|up|down")--> the wrist is anchored; a travel of
+                                           repeat_slide (or the binding's own "step") along the dominant
+                                           axis fires the action of that direction and re-anchors (chain);
+                                           a still hand re-anchors so drift never fires; the shape itself
+                                           never fires on sight. The leader shape may be a slide shape:
+                                           the palm that armed the menu scrolls as soon as it moves.
 ARMED   --repeatable action fires------> REPEAT(deadline = now + repeat_window)
 REPEAT  --same shape, wrist slid sideways >= repeat_slide--> fire again, deadline refreshed
 REPEAT  --deadline-----------------------> ARMED (chaining) / IDLE
@@ -156,7 +158,7 @@ class ModeEngine:
         self._adjust_settled = False
         self._refresh_on_return = False  # ARMED kept across a loss: the returning hand's leader shape renews the deadline
         self._slide_shape: str | None = None  # ARMED: the slide shape being tracked, and where its wrist was anchored
-        self._slide_anchor_x = 0.5
+        self._slide_anchor = (0.5, 0.5)
 
     def projected_hold_ns(self, t_ns: int) -> float:
         """Evidence extrapolated to t_ns at the last token's rate, so arming and the ring are smooth."""
@@ -234,6 +236,8 @@ class ModeEngine:
                 self._deadline_ns = tok.t_ns + self.timing.command_timeout_ns
                 self.bus.publish(ModeChanged(tok.t_ns, ARMED, ARMED, self.namespace, self._deadline_ns))
                 return
+            if self._slide(tok):
+                return
             if tok.name == self.leader and not self._leader_released:
                 self._release_tokens = 0
                 return  # the leader still held from arming never fires a command
@@ -250,26 +254,6 @@ class ModeEngine:
                 else:
                     self._fired_gap += 1
             ns = self.namespace or self.default_namespace
-            slide = self.slide_actions(ns, tok.name)
-            if slide is not None:
-                # a slide shape: direction of wrist travel picks the action, the shape alone never fires
-                if tok.confidence < self.min_token_confidence:
-                    return
-                if self._slide_shape != tok.name:
-                    self._slide_shape, self._slide_anchor_x = tok.name, tok.x
-                    return
-                dx = tok.x - self._slide_anchor_x  # user frame: +x is the user's right
-                if abs(dx) >= self.timing.repeat_slide:
-                    action = slide[1] if dx > 0 else slide[0]
-                    self._slide_anchor_x = tok.x
-                    if action is not None:
-                        self._deadline_ns = tok.t_ns + self.timing.command_timeout_ns
-                        self.repeat_count += 1
-                        self.bus.publish(ModeChanged(tok.t_ns, ARMED, ARMED, self.namespace, self._deadline_ns))
-                        self.fire(action, tok.t_ns)
-                elif tok.still:
-                    self._slide_anchor_x = tok.x
-                return
             self._slide_shape = None
             action = self.bindings.lookup(ns, tok.name)
             if action is None or tok.confidence < self.min_token_confidence:
@@ -345,10 +329,45 @@ class ModeEngine:
             if not self.drag.dragging:
                 self._after_command(ev.t_ns, None)  # dropped: grab another window, or anything else
 
-    def slide_actions(self, ns: str, shape: str) -> tuple[Action | None, Action | None] | None:
-        """(left, right) actions when `shape` is bound as a slide in `ns` ("<shape>:left" / "<shape>:right")."""
-        left, right = self.bindings.lookup(ns, f"{shape}:left"), self.bindings.lookup(ns, f"{shape}:right")
-        return None if left is None and right is None else (left, right)
+    DIRECTIONS = ("left", "right", "up", "down")
+
+    def slide_actions(self, ns: str, shape: str) -> dict[str, Action] | None:
+        """direction -> action when `shape` is bound as a slide in `ns` ("<shape>:left" etc.), else None."""
+        out = {d: a for d in self.DIRECTIONS if (a := self.bindings.lookup(ns, f"{shape}:{d}")) is not None}
+        return out or None
+
+    def _slide(self, tok: Token) -> bool:
+        """ARMED: a slide shape is tracked by wrist travel; True when the token was a slide shape
+        (handled here, whether or not it fired). The shape alone never fires."""
+        ns = self.namespace or self.default_namespace
+        slide = self.slide_actions(ns, tok.name)
+        if slide is None:
+            return False
+        if tok.confidence < self.min_token_confidence:
+            return True
+        if self._slide_shape != tok.name:
+            self._slide_shape, self._slide_anchor = tok.name, (tok.x, tok.y)
+            return True
+        dx, dy = tok.x - self._slide_anchor[0], tok.y - self._slide_anchor[1]  # user frame: +x right, +y down
+        step = self.timing.repeat_slide
+        for a in slide.values():
+            try:
+                step = float(a.arg("step") or step)
+                break
+            except ValueError:
+                pass
+        if max(abs(dx), abs(dy)) >= step:
+            direction = ("right" if dx > 0 else "left") if abs(dx) >= abs(dy) else ("down" if dy > 0 else "up")
+            self._slide_anchor = (tok.x, tok.y)
+            action = slide.get(direction)
+            if action is not None:
+                self._deadline_ns = tok.t_ns + self.timing.command_timeout_ns
+                self.repeat_count += 1
+                self.bus.publish(ModeChanged(tok.t_ns, ARMED, ARMED, self.namespace, self._deadline_ns))
+                self.fire(action, tok.t_ns)
+        elif tok.still:
+            self._slide_anchor = (tok.x, tok.y)
+        return True
 
     def _adjust_bound(self) -> bool:
         ns = self.namespace or self.default_namespace
