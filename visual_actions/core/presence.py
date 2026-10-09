@@ -113,7 +113,10 @@ class PresenceFilter:
         if out_lrt(w.x, w.y):
             return f"wrist outside ({w.x:.2f},{w.y:.2f})"
         px, py = _pinch_point(hf)
-        if out_lrt(px, py) or py > 1 + m:
+        # The pinch point (thumb/index midpoint) decides for the sides and the bottom only: a
+        # finger pointing up sits at the top edge all the time (2026-10-09: the desktop flick
+        # kept reading as hand lost), and the wrist rule already covers a hand leaving upward.
+        if px < -m or px > 1 + m or py > 1 + m:
             return f"pinch point outside ({px:.2f},{py:.2f})"
         outside = sum(1 for lm in hf.landmarks if out_lrt(lm.x, lm.y))
         if outside >= cls.EDGE_MAX_OUTSIDE:
@@ -128,7 +131,7 @@ class PresenceFilter:
         z = cls.BORDER_ZONE
         return any(lm.x < z or lm.x > 1 - z or lm.y < z for lm in hf.landmarks)
 
-    def _exiting(self, p0: tuple[float, float], p1: tuple[float, float], dt: float, look: float, bottom: bool, reach: float | None = None) -> str | None:
+    def _exiting(self, p0: tuple[float, float], p1: tuple[float, float], dt: float, look: float, bottom: bool, reach: float | None = None, top: bool = True) -> str | None:
         """p1 is within reach of an edge, moving toward it fast enough to be past it in `look` s."""
         vx, vy = (p1[0] - p0[0]) / dt, (p1[1] - p0[1]) / dt
         v = math.hypot(vx, vy)
@@ -140,7 +143,7 @@ class PresenceFilter:
         near = (
             (x < -m and p1[0] < reach)
             or (x > 1 + m and p1[0] > 1 - reach)
-            or (y < -m and p1[1] < reach)
+            or (top and y < -m and p1[1] < reach)
             or (bottom and y > 1 + m and p1[1] > 1 - reach)
         )
         if not near:
@@ -159,7 +162,7 @@ class PresenceFilter:
             why = self._exiting((w0.x, w0.y), (w1.x, w1.y), dt, look, bottom=False)
             if why:
                 return f"wrist {why}"
-            why = self._exiting(_pinch_point(prev), _pinch_point(hf), dt, look, bottom=self.fast_exit_bottom)
+            why = self._exiting(_pinch_point(prev), _pinch_point(hf), dt, look, bottom=self.fast_exit_bottom, top=False)
             if why:
                 return f"pinch point {why}"
         if not self.touching_border(hf):
@@ -196,10 +199,10 @@ class PresenceFilter:
                 ("pinch point", _pinch_point(prev), _pinch_point(hand), True),
             ):
                 v = math.hypot(p1[0] - p0[0], p1[1] - p0[1]) / dt
-                outside = p1[0] < -m or p1[0] > 1 + m or p1[1] < -m or (bottom and p1[1] > 1 + m)
+                outside = p1[0] < -m or p1[0] > 1 + m or (label == "wrist" and p1[1] < -m) or (bottom and p1[1] > 1 + m)
                 if v >= self.fast_exit_speed and outside:
                     return f"{label} left at {v:.1f} fw/s, now ({p1[0]:.2f},{p1[1]:.2f})"
-                why = self._exiting(p0, p1, dt, look, bottom=bottom and self.fast_exit_bottom, reach=1.0)
+                why = self._exiting(p0, p1, dt, look, bottom=bottom and self.fast_exit_bottom, reach=1.0, top=label == "wrist")
                 if why:
                     return f"{label} {why}"
             return None
@@ -214,7 +217,7 @@ class PresenceFilter:
         why = self._exiting((w0.x, w0.y), (w1.x, w1.y), dt, look, bottom=False, reach=1.0)
         if why:
             return f"tracker lost the wrist {why}"
-        why = self._exiting(_pinch_point(prev2), _pinch_point(prev), dt, look, bottom=self.fast_exit_bottom, reach=1.0)
+        why = self._exiting(_pinch_point(prev2), _pinch_point(prev), dt, look, bottom=self.fast_exit_bottom, reach=1.0, top=False)
         if why:
             return f"tracker lost the pinch point {why}"
         return None
