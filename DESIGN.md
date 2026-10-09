@@ -412,6 +412,13 @@ Findings on the 2026-10-08 recordings (10,828 session frames + 9,786 dataset fra
   pause the hold, so the safety of the leader is intact.
 - Swipe shapes (three fingers, blade) were tried and moved to the `swipe-desktops`
   branch on 2026-10-08: buggy and unintuitive in live use. Slide-to-repeat stayed.
+- Direction slides (2026-10-09): the tab bindings are gone. In the window menu one finger
+  up is a slide shape (bindings `point_up:left` / `point_up:right`): it never fires on
+  sight; the wrist is anchored when the shape appears and each sideways travel of
+  `repeat_slide` (10 % of the frame) fires the desktop switch of that direction and
+  re-anchors, so steps chain; a still hand re-anchors so drift never fires. Unlike the
+  three-finger swipe this needs no stroke detector: the shape is held, the menu is already
+  open, and the step is the same slide gesture the repeat window used.
 
 Distance: by default the pointer maps the camera frame directly, so drag speed
 follows hand distance (farther = slower per centimetre), which the user prefers.
