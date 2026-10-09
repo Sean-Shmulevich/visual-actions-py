@@ -178,13 +178,15 @@ def test_adjust_prompts_until_settled_then_shows_the_live_volume():
     card = m.render(S, volume=(0.62, False))
     assert card.state == "adjust" and card.symbol == "speaker.wave.2" and card.persistent
     assert card.title == "Volume 62%" and card.subtitle == "hold the pinch still…" and card.progress == 0.62
+    assert card.trailing == ""  # the title carries the level
     m.on_mode(ModeChanged(S + 250_000_000, ADJUST, ADJUST, namespace="media"))  # settled
     assert m.render(S + 250_000_000, volume=(0.62, False)).subtitle == "◀ quieter · pinch · louder ▶"
     # volume steps do not flash over the level
     m.on_action(ActionFired(2 * S, action("Volume Up"), ok=True))
     card = m.render(2 * S, volume=(0.68, False))
     assert card.state == "adjust" and card.title == "Volume 68%"
-    assert m.render(2 * S, volume=(0.0, True)).symbol == "speaker.slash"
+    muted = m.render(2 * S, volume=(0.0, True))
+    assert muted.symbol == "speaker.slash" and muted.trailing == "muted" and muted.title == "Volume 0% (muted)"
     assert m.render(2 * S, volume=None).title == "Volume"
     # release: "done" stays for popup_ms, then nothing
     m.on_mode(ModeChanged(3 * S, ADJUST, IDLE))

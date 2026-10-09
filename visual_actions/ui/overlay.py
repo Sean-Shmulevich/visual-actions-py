@@ -1,90 +1,140 @@
-"""Always-on-top indicator: mode label, countdown ring, last token, action flash.
+"""The on-screen HUD: a native vibrancy card at the top centre of the screen.
 
-Main thread only. Subscribes to the bus and redraws on Tick.
+Main thread only. `OverlayModel` (ui/overlay_model.py) turns the bus events into a `Card`
+per tick; this file only renders it with AppKit built in code (no nibs):
+
+  NSPanel (borderless, non-activating, status level, ignores the mouse, all Spaces)
+    NSVisualEffectView  HUD material, rounded 14 pt, hairline border, follows dark / light
+      NSStackView (horizontal)
+        glyph   SF Symbol tinted with the card's accent, ringed by a CAShapeLayer arc
+                (the leader hold evidence, or the volume level while adjusting)
+        title / subtitle (vertical NSStackView, system fonts)
+        trailing label (percent, seconds left, repeat count, snap zone)
+      countdown bar  a CALayer along the bottom that drains to the deadline
+                     (green while armed, orange in the repeat window, red for the hand-lost grace)
+
+The panel fades in and out with NSAnimationContext; one-shot cards (fired, timed out,
+cancelled, dropped, vetoed) hide after popup_ms, the rest stay while their state lasts.
 """
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 
-import objc
+import AppKit
 from AppKit import (
+    NSAnimationContext,
     NSBackingStoreBuffered,
     NSBezierPath,
     NSColor,
     NSFont,
-    NSFontAttributeName,
-    NSForegroundColorAttributeName,
+    NSImage,
+    NSImageView,
+    NSInsetRect,
+    NSLayoutConstraint,
+    NSLineBreakByTruncatingTail,
     NSMakeRect,
     NSPanel,
     NSScreen,
+    NSStackView,
     NSStatusWindowLevel,
+    NSTextField,
     NSView,
+    NSVisualEffectView,
     NSWindowCollectionBehaviorCanJoinAllSpaces,
     NSWindowCollectionBehaviorStationary,
     NSWindowStyleMaskBorderless,
     NSWindowStyleMaskNonactivatingPanel,
 )
-from Foundation import NSString
+from Quartz import (
+    CALayer,
+    CAShapeLayer,
+    CATransaction,
+    CGPathAddArc,
+    CGPathCreateMutable,
+    kCALineCapRound,
+)
 
-from ..core.drag import DragEvent, DragPhase
-from ..core.events import ActionFired, Bus, HoldProgress, ModeChanged, Tick, TokenEmitted
-from ..core.modes import ADJUST, ARMED, DRAGGING, HOLDING, IDLE, REPEAT
+from ..core.drag import DragEvent
+from ..core.events import (
+    ActionFired,
+    Bus,
+    HandLost,
+    HandSeen,
+    HoldProgress,
+    ModeChanged,
+    PalmVetoed,
+    SnapPreview,
+    Tick,
+    TokenEmitted,
+)
+from ..core.modes import ADJUST, IDLE, Timing
+from .overlay_model import BLUE, GRAY, GREEN, ORANGE, PURPLE, RED, Card, OverlayModel
 
-W, H = 260, 72
-LEADER_LABELS = {"window": "palm", "media": "peace"}
+W, H = 320, 66
+CORNER = 14.0
+GLYPH = 40.0  # the glyph box; the ring is drawn just inside it
+RING_WIDTH = 3.0
+BAR_INSET, BAR_Y, BAR_H = 14.0, 6.0, 3.0
+FADE_IN_S, FADE_OUT_S = 0.15, 0.25
+
+# NSVisualEffectView constants, by value so the module imports on older PyObjC builds too.
+MATERIAL_HUD = getattr(AppKit, "NSVisualEffectMaterialHUDWindow", 13)
+BLEND_BEHIND_WINDOW = getattr(AppKit, "NSVisualEffectBlendingModeBehindWindow", 0)
+STATE_ACTIVE = getattr(AppKit, "NSVisualEffectStateActive", 1)
+ORIENTATION_HORIZONTAL = getattr(AppKit, "NSUserInterfaceLayoutOrientationHorizontal", 0)
+ORIENTATION_VERTICAL = getattr(AppKit, "NSUserInterfaceLayoutOrientationVertical", 1)
+DISTRIBUTION_FILL = getattr(AppKit, "NSStackViewDistributionFill", 0)
+ALIGN_CENTER_Y = getattr(AppKit, "NSLayoutAttributeCenterY", 10)
+ALIGN_LEADING = getattr(AppKit, "NSLayoutAttributeLeading", 5)
+WEIGHT_REGULAR = getattr(AppKit, "NSFontWeightRegular", 0.0)
+WEIGHT_MEDIUM = getattr(AppKit, "NSFontWeightMedium", 0.23)
+WEIGHT_SEMIBOLD = getattr(AppKit, "NSFontWeightSemibold", 0.3)
 
 
-class OverlayView(NSView):
-    state = objc.ivar()
+def accent_color(name: str) -> NSColor:
+    return {
+        BLUE: NSColor.systemBlueColor(),
+        GREEN: NSColor.systemGreenColor(),
+        PURPLE: NSColor.systemPurpleColor(),
+        RED: NSColor.systemRedColor(),
+        ORANGE: NSColor.systemOrangeColor(),
+        GRAY: NSColor.systemGrayColor(),
+    }.get(name, NSColor.labelColor())
 
-    def initWithFrame_(self, frame):
-        self = objc.super(OverlayView, self).initWithFrame_(frame)  # noqa: PLW0642 - PyObjC idiom
-        if self is None:
-            return None
-        self.state = {"mode": IDLE, "progress": 0.0, "label": "", "sub": "", "flash": False}
-        return self
+
+def _label(size: float, weight: float, color: NSColor, mono_digits: bool = False) -> NSTextField:
+    field = NSTextField.labelWithString_("")
+    font = NSFont.monospacedDigitSystemFontOfSize_weight_(size, weight) if mono_digits else NSFont.systemFontOfSize_weight_(size, weight)
+    field.setFont_(font)
+    field.setTextColor_(color)
+    field.setLineBreakMode_(NSLineBreakByTruncatingTail)
+    field.setMaximumNumberOfLines_(1)
+    field.setTranslatesAutoresizingMaskIntoConstraints_(False)
+    return field
+
+
+def _ring_path(size: float, inset: float):
+    """A full circle starting at 12 o'clock and running clockwise, for strokeEnd = fraction."""
+    path = CGPathCreateMutable()
+    c, r = size / 2, size / 2 - inset
+    CGPathAddArc(path, None, c, c, r, math.pi / 2, math.pi / 2 - 2 * math.pi, True)
+    return path
+
+
+class BorderView(NSView):
+    """A hairline rounded border on top of the vibrancy card; `separatorColor` follows the appearance."""
 
     def drawRect_(self, rect):
-        s = self.state
-        bg = NSColor.colorWithCalibratedWhite_alpha_(0.08, 0.86)
-        path = NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(self.bounds(), 14, 14)
-        bg.setFill()
-        path.fill()
+        rect = NSInsetRect(self.bounds(), 0.5, 0.5)
+        path = NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(rect, CORNER - 0.5, CORNER - 0.5)
+        path.setLineWidth_(1.0)
+        NSColor.separatorColor().setStroke()
+        path.stroke()
 
-        cx, cy, r = 36, H / 2, 22
-        track = NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.18)
-        ring = NSBezierPath.bezierPath()
-        ring.appendBezierPathWithArcWithCenter_radius_startAngle_endAngle_clockwise_((cx, cy), r, 0, 360, False)
-        ring.setLineWidth_(5)
-        track.setStroke()
-        ring.stroke()
-        if s["progress"] > 0:
-            color = {
-                HOLDING: NSColor.colorWithCalibratedRed_green_blue_alpha_(0.35, 0.65, 1.0, 1.0),
-                ARMED: NSColor.colorWithCalibratedRed_green_blue_alpha_(0.35, 0.85, 0.45, 1.0),
-                DRAGGING: NSColor.colorWithCalibratedRed_green_blue_alpha_(0.85, 0.55, 1.0, 1.0),
-                "lost": NSColor.colorWithCalibratedRed_green_blue_alpha_(0.95, 0.3, 0.35, 1.0),
-                REPEAT: NSColor.colorWithCalibratedRed_green_blue_alpha_(1.0, 0.75, 0.3, 1.0),
-                ADJUST: NSColor.colorWithCalibratedRed_green_blue_alpha_(0.85, 0.55, 1.0, 1.0),
-            }.get(s["mode"], NSColor.whiteColor())
-            if s["flash"]:
-                color = NSColor.colorWithCalibratedRed_green_blue_alpha_(1.0, 0.8, 0.2, 1.0)
-            arc = NSBezierPath.bezierPath()
-            end = 90 - 360 * min(1.0, s["progress"])
-            arc.appendBezierPathWithArcWithCenter_radius_startAngle_endAngle_clockwise_((cx, cy), r, 90, end, True)
-            arc.setLineWidth_(5)
-            arc.setLineCapStyle_(1)
-            color.setStroke()
-            arc.stroke()
-
-        attrs = {NSFontAttributeName: NSFont.boldSystemFontOfSize_(16), NSForegroundColorAttributeName: NSColor.whiteColor()}
-        NSString.stringWithString_(s["label"]).drawAtPoint_withAttributes_((72, cy + 2), attrs)
-        sub_attrs = {
-            NSFontAttributeName: NSFont.systemFontOfSize_(12),
-            NSForegroundColorAttributeName: NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.7),
-        }
-        NSString.stringWithString_(s["sub"]).drawAtPoint_withAttributes_((72, cy - 18), sub_attrs)
+    def hitTest_(self, point):
+        return None
 
 
 class Overlay:
@@ -96,32 +146,38 @@ class Overlay:
         popup_ms: int,
         grace_ns: int = 2_500_000_000,
         volume: Callable[[], tuple[float, bool] | None] | None = None,
+        timing: Timing | None = None,
     ) -> None:
         self.volume = volume  # reads the real system volume; polled only while adjusting
         self._volume_cache: tuple[float, bool] | None = None
         self._volume_read_ns = 0
-        self.adjust_until_ns = 0  # keep showing the volume for popup_ms after the pinch is released
         self.hold_ns, self.timeout_ns, self.popup_ns = hold_ns, timeout_ns, popup_ms * 1_000_000
         self.grace_ns = grace_ns
-        self.lost_since_ns: int | None = None
-        self.mode = IDLE
-        self.adjust_ready = False
-        self.namespace: str | None = None
-        self.mode_since_ns = 0
-        self.hold_fraction = 0.0
-        self.hold_rate = 0.0
-        self.hold_at_ns = 0
-        self.deadline_ns: int | None = None
-        self.last_token = ""
-        self.drag_window = ""
-        self.flash_until_ns = 0
-        self.flash_text = ""
+        repeat_window_ns = (timing or Timing()).repeat_window_ns
+        self.model = OverlayModel(timeout_ns, self.popup_ns, grace_ns, repeat_window_ns)
+        self.card: Card | None = None  # what the panel shows right now (None = hidden)
+        self._shown = False
+        self._fade_gen = 0
+        self._symbol_cache: dict[str, NSImage | None] = {}
 
-        screen = NSScreen.mainScreen().visibleFrame()
-        x = screen.origin.x + (screen.size.width - W) / 2
-        y = screen.origin.y + screen.size.height - H - 12
+        self._build_panel()
+
+        bus.subscribe(ModeChanged, self._on_mode)
+        bus.subscribe(HoldProgress, self._on_hold)
+        bus.subscribe(TokenEmitted, self._on_token)
+        bus.subscribe(DragEvent, self._on_drag)
+        bus.subscribe(ActionFired, self._on_action)
+        bus.subscribe(SnapPreview, self._on_snap)
+        bus.subscribe(HandLost, self._on_hand_lost)
+        bus.subscribe(HandSeen, self._on_hand_seen)
+        bus.subscribe(PalmVetoed, self._on_veto)
+        bus.subscribe(Tick, self._on_tick)
+
+    # -- construction -------------------------------------------------------
+
+    def _build_panel(self) -> None:
         self.panel = NSPanel.alloc().initWithContentRect_styleMask_backing_defer_(
-            NSMakeRect(x, y, W, H),
+            NSMakeRect(0, 0, W, H),
             NSWindowStyleMaskBorderless | NSWindowStyleMaskNonactivatingPanel,
             NSBackingStoreBuffered,
             False,
@@ -131,49 +187,145 @@ class Overlay:
         self.panel.setBackgroundColor_(NSColor.clearColor())
         self.panel.setIgnoresMouseEvents_(True)
         self.panel.setHasShadow_(True)
+        self.panel.setAlphaValue_(0.0)
         self.panel.setCollectionBehavior_(NSWindowCollectionBehaviorCanJoinAllSpaces | NSWindowCollectionBehaviorStationary)
-        self.view = OverlayView.alloc().initWithFrame_(NSMakeRect(0, 0, W, H))
-        self.panel.setContentView_(self.view)
+        self._place()
 
-        bus.subscribe(ModeChanged, self._on_mode)
-        bus.subscribe(HoldProgress, self._on_hold)
-        bus.subscribe(TokenEmitted, self._on_token)
-        bus.subscribe(DragEvent, self._on_drag)
-        bus.subscribe(ActionFired, self._on_action)
-        bus.subscribe(Tick, self._on_tick)
+        self.effect = NSVisualEffectView.alloc().initWithFrame_(NSMakeRect(0, 0, W, H))
+        self.effect.setMaterial_(MATERIAL_HUD)
+        self.effect.setBlendingMode_(BLEND_BEHIND_WINDOW)
+        self.effect.setState_(STATE_ACTIVE)
+        self.effect.setWantsLayer_(True)
+        self.effect.layer().setCornerRadius_(CORNER)
+        self.effect.layer().setMasksToBounds_(True)
+        self.panel.setContentView_(self.effect)
+
+        # glyph: symbol (or text fallback) inside a ring
+        self.glyph_box = NSView.alloc().initWithFrame_(NSMakeRect(0, 0, GLYPH, GLYPH))
+        self.glyph_box.setWantsLayer_(True)
+        self.glyph_box.setTranslatesAutoresizingMaskIntoConstraints_(False)
+        self.glyph_box.widthAnchor().constraintEqualToConstant_(GLYPH).setActive_(True)
+        self.glyph_box.heightAnchor().constraintEqualToConstant_(GLYPH).setActive_(True)
+        self.symbol_view = NSImageView.alloc().initWithFrame_(NSMakeRect(0, 0, GLYPH, GLYPH))
+        self.symbol_view.setTranslatesAutoresizingMaskIntoConstraints_(False)
+        self.symbol_view.setImageScaling_(getattr(AppKit, "NSImageScaleProportionallyDown", 3))
+        self.glyph_text = _label(18, WEIGHT_MEDIUM, NSColor.labelColor())
+        self.glyph_text.setAlignment_(getattr(AppKit, "NSTextAlignmentCenter", 1))
+        self.glyph_text.setHidden_(True)
+        for sub in (self.symbol_view, self.glyph_text):
+            self.glyph_box.addSubview_(sub)
+            sub.centerXAnchor().constraintEqualToAnchor_(self.glyph_box.centerXAnchor()).setActive_(True)
+            sub.centerYAnchor().constraintEqualToAnchor_(self.glyph_box.centerYAnchor()).setActive_(True)
+        self.ring_track = CAShapeLayer.layer()
+        self.ring = CAShapeLayer.layer()
+        for layer in (self.ring_track, self.ring):
+            layer.setFrame_(NSMakeRect(0, 0, GLYPH, GLYPH))
+            layer.setPath_(_ring_path(GLYPH, RING_WIDTH / 2 + 0.5))
+            layer.setFillColor_(None)
+            layer.setLineWidth_(RING_WIDTH)
+            layer.setLineCap_(kCALineCapRound)
+            self.glyph_box.layer().addSublayer_(layer)
+        self.ring.setStrokeEnd_(0.0)
+
+        # text column
+        self.title = _label(15, WEIGHT_SEMIBOLD, NSColor.labelColor())
+        self.subtitle = _label(12, WEIGHT_REGULAR, NSColor.secondaryLabelColor())
+        text = NSStackView.stackViewWithViews_([self.title, self.subtitle])
+        text.setOrientation_(ORIENTATION_VERTICAL)
+        text.setAlignment_(ALIGN_LEADING)
+        text.setSpacing_(1)
+        text.setTranslatesAutoresizingMaskIntoConstraints_(False)
+        text.setContentHuggingPriority_forOrientation_(1, ORIENTATION_HORIZONTAL)
+        for field in (self.title, self.subtitle):
+            field.setContentCompressionResistancePriority_forOrientation_(250, ORIENTATION_HORIZONTAL)
+            field.setContentHuggingPriority_forOrientation_(250, ORIENTATION_HORIZONTAL)
+
+        # trailing figure
+        self.trailing = _label(12, WEIGHT_MEDIUM, NSColor.tertiaryLabelColor(), mono_digits=True)
+        self.trailing.setAlignment_(getattr(AppKit, "NSTextAlignmentRight", 2))
+        self.trailing.setContentCompressionResistancePriority_forOrientation_(750, ORIENTATION_HORIZONTAL)
+        self.trailing.setContentHuggingPriority_forOrientation_(750, ORIENTATION_HORIZONTAL)
+
+        row = NSStackView.stackViewWithViews_([self.glyph_box, text, self.trailing])
+        row.setOrientation_(ORIENTATION_HORIZONTAL)
+        row.setDistribution_(DISTRIBUTION_FILL)  # the text column takes the slack, the figure hugs the trailing edge
+        row.setAlignment_(ALIGN_CENTER_Y)
+        row.setSpacing_(12)
+        row.setEdgeInsets_((10, 14, 14, 14))
+        row.setTranslatesAutoresizingMaskIntoConstraints_(False)
+        self.effect.addSubview_(row)
+        NSLayoutConstraint.activateConstraints_(
+            [
+                row.leadingAnchor().constraintEqualToAnchor_(self.effect.leadingAnchor()),
+                row.trailingAnchor().constraintEqualToAnchor_(self.effect.trailingAnchor()),
+                row.topAnchor().constraintEqualToAnchor_(self.effect.topAnchor()),
+                row.bottomAnchor().constraintEqualToAnchor_(self.effect.bottomAnchor()),
+            ]
+        )
+
+        # countdown bar along the bottom
+        self.bar_track = CALayer.layer()
+        self.bar = CALayer.layer()
+        for layer in (self.bar_track, self.bar):
+            layer.setFrame_(NSMakeRect(BAR_INSET, BAR_Y, W - 2 * BAR_INSET, BAR_H))
+            layer.setCornerRadius_(BAR_H / 2)
+            layer.setAnchorPoint_((0.0, 0.5))
+            layer.setPosition_((BAR_INSET, BAR_Y + BAR_H / 2))
+            layer.setHidden_(True)
+            self.effect.layer().addSublayer_(layer)
+
+        border = BorderView.alloc().initWithFrame_(NSMakeRect(0, 0, W, H))
+        border.setAutoresizingMask_(getattr(AppKit, "NSViewWidthSizable", 2) | getattr(AppKit, "NSViewHeightSizable", 16))
+        self.effect.addSubview_(border)
+
+    def _place(self) -> None:
+        """Top centre of the main screen, just under the menu bar, like a system HUD."""
+        screen = NSScreen.mainScreen()
+        if screen is None:
+            return
+        frame = screen.visibleFrame()
+        x = frame.origin.x + (frame.size.width - W) / 2
+        y = frame.origin.y + frame.size.height - H - 12
+        self.panel.setFrame_display_(NSMakeRect(x, y, W, H), False)
+
+    # -- lifecycle ----------------------------------------------------------
 
     def close(self) -> None:
         """Hide the panel; the app drops the bus this overlay listens on when it rebuilds from a new config."""
+        self._shown = False
+        self._fade_gen += 1
         if self.panel.isVisible():
             self.panel.orderOut_(None)
+        self.panel.setAlphaValue_(0.0)
 
-    def _on_drag(self, ev: DragEvent) -> None:
-        if ev.phase is DragPhase.PAUSE:
-            self.lost_since_ns = ev.t_ns
-        elif ev.phase in (DragPhase.RESUME, DragPhase.END):
-            self.lost_since_ns = None
-        self.drag_window = ev.window if ev.phase in (DragPhase.START, DragPhase.MOVE, DragPhase.RESUME, DragPhase.PAUSE) else ""
+    # -- events (all on the main thread) ------------------------------------
 
     def _on_mode(self, ev: ModeChanged) -> None:
-        if ev.new != HOLDING or ev.namespace != self.namespace:
-            self.hold_fraction, self.hold_rate = 0.0, 0.0  # a switch of root mode restarts the ring
-        self.mode, self.mode_since_ns, self.deadline_ns = ev.new, ev.t_ns, ev.deadline_ns
-        self.namespace = ev.namespace
-        self.adjust_ready = ev.old == ADJUST and ev.new == ADJUST  # second ADJUST event = the pinch settled
-        if ev.old == ADJUST and ev.new != ADJUST:
-            self.adjust_until_ns = ev.t_ns + self.popup_ns
-        if ev.new != DRAGGING:
-            self.lost_since_ns = None
+        self.model.on_mode(ev)
 
     def _on_hold(self, ev: HoldProgress) -> None:
-        self.hold_fraction, self.hold_rate, self.hold_at_ns = ev.fraction, ev.rate, ev.t_ns
+        self.model.on_hold(ev)
 
     def _on_token(self, ev: TokenEmitted) -> None:
-        self.last_token = ev.token.name
+        self.model.on_token(ev)
+
+    def _on_drag(self, ev: DragEvent) -> None:
+        self.model.on_drag(ev)
 
     def _on_action(self, ev: ActionFired) -> None:
-        self.flash_text = ev.action.name if ev.ok else f"{ev.action.name} failed"
-        self.flash_until_ns = ev.t_ns + self.popup_ns
+        self.model.on_action(ev)
+
+    def _on_snap(self, ev: SnapPreview) -> None:
+        self.model.on_snap(ev)
+
+    def _on_hand_lost(self, ev: HandLost) -> None:
+        self.model.on_hand_lost(ev)
+
+    def _on_hand_seen(self, ev: HandSeen) -> None:
+        self.model.on_hand_seen(ev)
+
+    def _on_veto(self, ev: PalmVetoed) -> None:
+        self.model.on_veto(ev)
 
     def _read_volume(self, now: int) -> tuple[float, bool] | None:
         if self.volume is None:
@@ -182,50 +334,118 @@ class Overlay:
             self._volume_read_ns = now
             try:
                 self._volume_cache = self.volume()
-            except Exception:  # noqa: BLE001 - a failed read shows "volume" without a number
+            except Exception:  # noqa: BLE001 - a failed read shows "Volume" without a number
                 self._volume_cache = None
         return self._volume_cache
 
     def _on_tick(self, ev: Tick) -> None:
         now = ev.t_ns
-        s = self.view.state
-        flashing = now < self.flash_until_ns
-        if self.mode == ADJUST or (self.mode == IDLE and now < self.adjust_until_ns):
-            # the live system volume, read back from the OS, not a count of our own key presses
-            vol = self._read_volume(now)
-            if vol is None:
-                label, level = "volume", 1.0
-            else:
-                level = vol[0]
-                label = f"Volume {round(level * 100)}%" + (" (muted)" if vol[1] else "")
-            if self.mode != ADJUST:
-                sub = "done"
-            elif self.adjust_ready:
-                sub = "◀ quieter · pinch · louder ▶"
-            else:
-                sub = "hold the pinch still…"
-            s.update(mode=ADJUST, progress=level, label=label, sub=sub, flash=False)
-        elif flashing:
-            s.update(mode=self.mode, progress=1.0, label=self.flash_text, sub="fired", flash=True)
-        elif self.mode == HOLDING:
-            p = min(1.0, self.hold_fraction + max(0.0, self.hold_rate) * (now - self.hold_at_ns) / 1e9)
-            shape = LEADER_LABELS.get(self.namespace or "", self.namespace or "palm")
-            s.update(mode=HOLDING, progress=p, label=f"Hold… {self.namespace or ''}", sub=f"{shape} {min(100, int(p * 100))}%", flash=False)
-        elif self.mode == DRAGGING and self.lost_since_ns is not None:
-            left = max(0, self.grace_ns - (now - self.lost_since_ns))
-            s.update(mode="lost", progress=left / self.grace_ns, label="hand lost", sub=f"{left / 1e9:.1f}s to resume", flash=False)
-        elif self.mode == DRAGGING:
-            s.update(mode=DRAGGING, progress=1.0, label="drag", sub=self.drag_window[:34], flash=False)
-        elif self.mode == REPEAT and self.deadline_ns:
-            left = max(0, self.deadline_ns - now)
-            s.update(mode=REPEAT, progress=left / 1.5e9, label="slide to repeat", sub=f"{self.flash_text or self.last_token}", flash=False)
-        elif self.mode == ARMED and self.deadline_ns:
-            left = max(0, self.deadline_ns - now)
-            s.update(mode=ARMED, progress=left / self.timeout_ns, label=self.namespace or "window", sub=f"{left / 1e9:.1f}s · {self.last_token}", flash=False)
-        else:
-            if self.panel.isVisible():
-                self.panel.orderOut_(None)
+        m = self.model
+        volume = self._read_volume(now) if m.mode == ADJUST or (m.mode == IDLE and now < m.adjust_until_ns) else None
+        self.draw(m.render(now, volume))
+
+    # -- rendering ----------------------------------------------------------
+
+    def draw(self, card: Card | None) -> None:
+        """Put `card` on the panel (fading it in if hidden) or fade the panel out for None."""
+        if card is None:
+            if self.card is not None:
+                self.card = None
+                self._hide()
             return
+        self._apply(card)
+        self.card = card
+        self._show()
+
+    def _apply(self, card: Card) -> None:
+        accent = accent_color(card.accent)
+        image = self._symbol(card.symbol, accent)
+        if image is not None:
+            self.symbol_view.setImage_(image)
+            self.symbol_view.setContentTintColor_(accent)
+            self.symbol_view.setHidden_(False)
+            self.glyph_text.setHidden_(True)
+        else:
+            self.glyph_text.setStringValue_(card.glyph)
+            self.glyph_text.setTextColor_(accent)
+            self.glyph_text.setHidden_(False)
+            self.symbol_view.setHidden_(True)
+        self.title.setStringValue_(card.title)
+        self.subtitle.setStringValue_(card.subtitle)
+        self.trailing.setStringValue_(card.trailing)
+        self.trailing.setHidden_(not card.trailing)
+
+        CATransaction.begin()
+        CATransaction.setDisableActions_(True)  # one exact value per tick: the model already extrapolates
+        try:
+            track = self._cg(NSColor.labelColor().colorWithAlphaComponent_(0.12))
+            show_ring = card.progress is not None
+            self.ring_track.setHidden_(not show_ring)
+            self.ring.setHidden_(not show_ring)
+            if show_ring:
+                self.ring_track.setStrokeColor_(track)
+                self.ring.setStrokeColor_(self._cg(accent))
+                self.ring.setStrokeEnd_(max(0.0, min(1.0, card.progress or 0.0)))
+            show_bar = card.bar_fraction is not None
+            self.bar_track.setHidden_(not show_bar)
+            self.bar.setHidden_(not show_bar)
+            if show_bar:
+                self.bar_track.setBackgroundColor_(track)
+                self.bar.setBackgroundColor_(self._cg(accent))
+                width = (W - 2 * BAR_INSET) * max(0.0, min(1.0, card.bar_fraction or 0.0))
+                self.bar.setBounds_(NSMakeRect(0, 0, width, BAR_H))
+        finally:
+            CATransaction.commit()
+
+    def _symbol(self, name: str, accent: NSColor) -> NSImage | None:
+        if name not in self._symbol_cache:
+            image = NSImage.imageWithSystemSymbolName_accessibilityDescription_(name, None)
+            if image is not None and hasattr(AppKit, "NSImageSymbolConfiguration"):
+                cfg = AppKit.NSImageSymbolConfiguration.configurationWithPointSize_weight_(20, WEIGHT_MEDIUM)
+                configured = image.imageWithSymbolConfiguration_(cfg)
+                image = configured or image
+            if image is not None:
+                image.setTemplate_(True)
+            self._symbol_cache[name] = image
+        return self._symbol_cache[name]
+
+    def _cg(self, color: NSColor):
+        """A CGColor resolved under the panel's appearance, so dynamic colours follow dark / light."""
+        appearance = self.effect.effectiveAppearance()
+        if appearance is not None and hasattr(appearance, "performAsCurrentDrawingAppearance_"):
+            out: list = []
+            appearance.performAsCurrentDrawingAppearance_(lambda: out.append(color.CGColor()))
+            if out:
+                return out[0]
+        return color.CGColor()
+
+    def _show(self) -> None:
+        if self._shown:
+            return
+        self._shown = True
+        self._fade_gen += 1
         if not self.panel.isVisible():
+            self._place()
+            self.panel.setAlphaValue_(0.0)
             self.panel.orderFrontRegardless()
-        self.view.setNeedsDisplay_(True)
+        NSAnimationContext.beginGrouping()
+        NSAnimationContext.currentContext().setDuration_(FADE_IN_S)
+        self.panel.animator().setAlphaValue_(1.0)
+        NSAnimationContext.endGrouping()
+
+    def _hide(self) -> None:
+        if not self._shown:
+            return
+        self._shown = False
+        self._fade_gen += 1
+        gen = self._fade_gen
+
+        def fade(ctx):
+            ctx.setDuration_(FADE_OUT_S)
+            self.panel.animator().setAlphaValue_(0.0)
+
+        def done():
+            if gen == self._fade_gen and not self._shown and self.panel.isVisible():
+                self.panel.orderOut_(None)
+
+        NSAnimationContext.runAnimationGroup_completionHandler_(fade, done)

@@ -91,6 +91,7 @@ class VisualActionsApp(rumps.App):
                     cfg.timing.popup_ms,
                     t.drag_lost_grace_ns,
                     volume=self._system_volume,
+                    timing=t,
                 )
             )
 

@@ -278,6 +278,6 @@ class OverlayModel:
             sub,
             PURPLE,
             progress=level,
-            trailing=f"{round(level * 100)}%" if volume is not None else "",
+            trailing="muted" if muted else "",
             persistent=self.mode == ADJUST,
         )
