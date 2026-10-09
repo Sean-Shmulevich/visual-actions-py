@@ -13,7 +13,6 @@ from visual_actions.core.modes import (
     DRAGGING,
     HOLDING,
     IDLE,
-    REPEAT,
     ModeEngine,
     Timing,
 )
@@ -197,18 +196,114 @@ def test_vertical_pinch_travel_does_not_change_the_volume():
 
 
 def test_adjust_has_no_timeout_but_a_fist_or_lost_hand_ends_it():
-    eng, _, _ = make()
+    eng, _, modes = make()
     arm_media(eng)
     pinch(eng, 1.5, PinchPhase.START, 0.5)
     eng.on_tick(int(20 * S))
     assert eng.state == ADJUST  # pinching for as long as you like
     eng.on_hand_lost(int(20.1 * S))
     eng.on_tick(int(21.7 * S))
+    assert eng.state == ARMED and modes[-1].old == ADJUST  # lost past the grace: the menu stays open
+    assert modes[-1].deadline_ns == int(21.7 * S) + TIMING.command_timeout_ns  # with a fresh timeout
+    eng.on_token(tok("fist", 21.8))
     assert eng.state == IDLE
     arm_media_at(eng, 22.0)
     pinch(eng, 23.5, PinchPhase.START, 0.5)
     eng.on_token(tok("fist", 23.75))
     assert eng.state == IDLE
+
+
+# -- adjust anchor feedback and loss grace ---------------------------------------
+
+
+def make_adjust():
+    from visual_actions.core.events import AdjustEvent
+
+    cfg = default_config()
+    bus = Bus()
+    fired, modes, events = [], [], []
+    bus.subscribe(ModeChanged, modes.append)
+    bus.subscribe(AdjustEvent, events.append)
+    pmap = PointerMap(1000, 1000, ReachBox(0, 1, 0, 1))
+    eng = ModeEngine(bus, cfg.bindings(), TIMING, fire=lambda a, t: fired.append(a.name), leaders=cfg.leaders(), to_screen=pmap.to_screen)
+    return eng, fired, modes, events
+
+
+def test_adjust_publishes_settle_start_move_and_end_in_screen_points():
+    from visual_actions.core.events import AdjustPhase
+
+    eng, fired, _, events = make_adjust()
+    arm_media(eng)
+    pinch(eng, 1.5, PinchPhase.START, 0.60, 0.40)
+    pinch(eng, 1.6, PinchPhase.MOVE, 0.40, 0.40)  # moving: the settle restarts
+    pinch(eng, 1.7, PinchPhase.MOVE, 0.50, 0.40)
+    pinch(eng, 1.9, PinchPhase.MOVE, 0.51, 0.40)
+    assert [e.phase for e in events] == [AdjustPhase.SETTLE] * 4
+    assert (events[0].x, events[0].y) == (600.0, 400.0) and (events[0].ax, events[0].ay) == (600.0, 400.0)  # hollow ring on the pinch
+    pinch(eng, 2.0, PinchPhase.MOVE, 0.50, 0.40)  # settled: the anchor is here
+    assert events[-1].phase is AdjustPhase.START and (events[-1].ax, events[-1].ay) == (500.0, 400.0)
+    pinch(eng, 2.1, PinchPhase.MOVE, 0.53, 0.42)  # under one step
+    assert events[-1].phase is AdjustPhase.MOVE and events[-1].steps == 0
+    assert (events[-1].ax, events[-1].ay) == (500.0, 400.0) and (events[-1].x, events[-1].y) == (530.0, 420.0)
+    pinch(eng, 2.2, PinchPhase.MOVE, 0.61, 0.42)  # two steps right: the anchor moves two steps along
+    assert fired == ["Volume up", "Volume up"]
+    assert events[-1].phase is AdjustPhase.MOVE and events[-1].steps == 2 and round(events[-1].ax) == 600
+    pinch(eng, 2.3, PinchPhase.MOVE, 0.54, 0.42)
+    assert events[-1].steps == -1 and round(events[-1].ax) == 550
+    pinch(eng, 2.4, PinchPhase.END, 0.54, 0.42)
+    assert events[-1].phase is AdjustPhase.END and events[-1].steps == 3 and eng.state == ARMED
+
+
+def test_a_short_loss_keeps_the_adjust_anchor_and_the_pinch_resumes_without_settling():
+    from visual_actions.core.events import AdjustPhase
+
+    eng, fired, modes, events = make_adjust()
+    arm_media(eng)
+    pinch(eng, 1.5, PinchPhase.START, 0.50)
+    pinch(eng, 1.8, PinchPhase.MOVE, 0.50)  # settled at 0.50
+    assert events[-1].phase is AdjustPhase.START
+    eng.on_hand_lost(int(1.9 * S))
+    eng.on_tick(int(2.4 * S))
+    assert eng.state == ADJUST and modes[-1].new == ADJUST  # half a second: the anchor is kept
+    pinch(eng, 2.45, PinchPhase.START, 0.56)  # the pinch re-forms a step to the right: fires at once
+    assert fired == ["Volume up"] and eng.state == ADJUST
+    assert events[-1].phase is AdjustPhase.MOVE and events[-1].steps == 1  # no SETTLE again
+    pinch(eng, 2.5, PinchPhase.MOVE, 0.44)  # and left of the moved anchor (0.55): two steps down
+    assert fired == ["Volume up", "Volume down", "Volume down"]
+    eng.on_tick(int(4.0 * S))
+    assert eng.state == ADJUST  # the hand is back: no grace clock runs
+
+
+def test_a_long_loss_ends_the_adjust_to_the_armed_menu():
+    from visual_actions.core.events import AdjustPhase
+
+    eng, fired, modes, events = make_adjust()
+    arm_media(eng)
+    pinch(eng, 1.5, PinchPhase.START, 0.50)
+    pinch(eng, 1.8, PinchPhase.MOVE, 0.50)
+    eng.on_hand_lost(int(1.9 * S))
+    eng.on_tick(int(2.8 * S))
+    assert eng.state == ADJUST
+    eng.on_tick(int(3.1 * S))  # 1.2 s gone
+    assert eng.state == ARMED and eng.namespace == "media"
+    assert events[-1].phase is AdjustPhase.END and events[-1].steps == 0
+    assert modes[-1].old == ADJUST and modes[-1].new == ARMED
+    assert modes[-1].deadline_ns == int(3.1 * S) + TIMING.command_timeout_ns
+    assert not fired
+
+
+def test_a_fist_during_adjust_cancels_to_idle_and_ends_the_overlay():
+    from visual_actions.core.events import AdjustPhase
+
+    eng, _, _, events = make_adjust()
+    arm_media(eng)
+    pinch(eng, 1.5, PinchPhase.START, 0.50)
+    pinch(eng, 1.8, PinchPhase.MOVE, 0.50)
+    eng.on_token(tok("fist", 1.9))
+    assert eng.state == IDLE and events[-1].phase is AdjustPhase.END
+    eng.on_hand_lost(int(2.0 * S))  # a loss after the fist: nothing to resume
+    pinch(eng, 2.5, PinchPhase.START, 0.56)
+    assert eng.state == IDLE and events[-1].phase is AdjustPhase.END
 
 
 def test_peace_then_quick_pinch_adjusts_at_once():

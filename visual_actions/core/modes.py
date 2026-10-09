@@ -44,6 +44,9 @@ ARMED   --pinch START, namespace binds pinch_right/pinch_left--> ADJUST(anchor =
 ADJUST  --until the pinch holds still adjust_settle--> nothing (transition pinches move, never settle)
 ADJUST  --pinch MOVE, user's right/left by adjust_step--> fire pinch_right / pinch_left, anchor moves one step
 ADJUST  --pinch END----------------------> ARMED (chaining) / IDLE
+ADJUST  --hand lost----------------------> the anchor is kept for ADJUST_LOST_GRACE; a pinch back within it
+                                           continues from the anchor (no re-settle); longer -> ARMED (fresh timeout)
+ADJUST  --pinch frames-------------------> AdjustEvent SETTLE / START / MOVE / END for the cursor overlay
 ARMED   --scroll shape (a binding of kind scroll with mode "stick"), still--> SCROLL(anchor = wrist)
 SCROLL  --hand frames---------------------> the ScrollController scrolls by the wrist's offset from the anchor
 SCROLL  --two tokens of another shape----> ARMED (fresh timeout)
@@ -54,7 +57,7 @@ HOLDING --hand lost--------------------> IDLE at once (hold_lost_grace 0, STRICT
 ARMED/REPEAT --hand lost (keep_armed_on_lost)--> the window keeps its own deadline; IDLE when it
                                            passes, or when the hand has been gone 2 x escape_lost
                                            with nothing pending (no half-recognized gesture, no slide window)
-ADJUST  --hand lost escape_lost_s--------> IDLE  (and ARMED/REPEAT too when keep_armed_on_lost is off)
+ARMED/REPEAT --hand lost (keep_armed_on_lost off)--> IDLE after escape_lost
 
 Confidence therefore accelerates or decelerates both phases: a sure palm arms
 early, a hesitant one stalls; a sure gesture fires on one token, a weak one needs
@@ -68,7 +71,7 @@ from dataclasses import dataclass
 
 from .bindings import Bindings
 from .drag import DragController
-from .events import Bus, HoldProgress, ModeChanged
+from .events import AdjustEvent, AdjustPhase, Bus, HoldProgress, ModeChanged
 from .pinch import PinchEvent, PinchPhase
 from .recognizer import FIST, OPEN_PALM
 from .scroll import ScrollController
@@ -124,8 +127,13 @@ class ModeEngine:
         leaders: dict[str, str] | None = None,
         drag_namespace: str = "window",
         scroll: ScrollController | None = None,
+        to_screen: Callable[[float, float], tuple[float, float]] | None = None,
     ) -> None:
         self.scroll = scroll
+        # user-frame point -> screen point for the ADJUST overlay (the pipeline's PointerMap); identity when absent
+        self.to_screen: Callable[[float, float], tuple[float, float]] = to_screen if to_screen is not None else (lambda x, y: (x, y))
+        self._adjust_lost_ns: int | None = None  # ADJUST: when the hand was lost; the anchor waits ADJUST_LOST_GRACE_NS
+        self._adjust_anchor_y = 0.5
         self._scroll_shape: str | None = None
         self._scroll_gap = 0
         self._scroll_lost_ns: int | None = None  # SCROLL: when the hand was lost; the scroll waits scroll_lost_grace
@@ -195,6 +203,8 @@ class ModeEngine:
                 self.drag.cancel(tok.t_ns)
             if self.state == SCROLL and self.scroll is not None:
                 self.scroll.end(tok.t_ns)
+            if self.state == ADJUST:
+                self._publish_adjust(AdjustPhase.END, tok.t_ns, self._adjust_anchor_x, self._adjust_anchor_y, self.repeat_count)
             self._go(IDLE, tok.t_ns)
             return
         if self.state == SCROLL:
@@ -331,6 +341,7 @@ class ModeEngine:
         pinch_right / pinch_left (media), a pinch enters ADJUST and sideways travel fires them."""
         if self.state == ADJUST:
             self._lost_since_ns = None
+            self._adjust_lost_ns = None  # the pinch is back (a fresh START after a loss continues from the anchor)
             self._adjust(ev)
             return
         pinch_ok = self.drag_allowed or self._adjust_bound()
@@ -342,10 +353,12 @@ class ModeEngine:
             self._arm(ev.t_ns)
         if self.state == ARMED and ev.phase is PinchPhase.START:
             if not self.drag_allowed:
-                self._adjust_anchor_x = ev.x
+                self._adjust_anchor_x, self._adjust_anchor_y = ev.x, ev.y
                 self._adjust_since_ns, self._adjust_settle_xy = ev.t_ns, (ev.x, ev.y)
                 self._adjust_settled = False
+                self._adjust_lost_ns = None
                 self._go(ADJUST, ev.t_ns)
+                self._publish_adjust(AdjustPhase.SETTLE, ev.t_ns, ev.x, ev.y)
             elif self.drag is not None and self.drag.on_pinch(ev):
                 self._go(DRAGGING, ev.t_ns)
             return  # a miss keeps the window armed
@@ -428,26 +441,49 @@ class ModeEngine:
         """Pinched hand travels sideways in the user frame (+x is the user's right): one
         pinch_right / pinch_left per adjust_step of frame width. Releasing ends it."""
         if ev.phase is PinchPhase.END:
-            self._after_command(ev.t_ns, None)
+            self._end_adjust(ev.t_ns)
             return
         if not self._adjust_settled:
             # "pinch, hold, then move": a pinch crossed during a shape change is moving, never settles
             if abs(ev.x - self._adjust_settle_xy[0]) + abs(ev.y - self._adjust_settle_xy[1]) > self.timing.adjust_settle_travel:
                 self._adjust_since_ns, self._adjust_settle_xy = ev.t_ns, (ev.x, ev.y)
+                self._publish_adjust(AdjustPhase.SETTLE, ev.t_ns, ev.x, ev.y)
                 return
             if ev.t_ns - self._adjust_since_ns < self.timing.adjust_settle_ns:
+                self._publish_adjust(AdjustPhase.SETTLE, ev.t_ns, ev.x, ev.y)
                 return
             self._adjust_settled = True
-            self._adjust_anchor_x = ev.x
+            self._adjust_anchor_x, self._adjust_anchor_y = ev.x, ev.y
             self.bus.publish(ModeChanged(ev.t_ns, ADJUST, ADJUST, self.namespace, None))  # settled: the overlay says "move"
+            self._publish_adjust(AdjustPhase.START, ev.t_ns, ev.x, ev.y)
+            return
         ns = self.namespace or self.default_namespace
         step = self.timing.adjust_step
+        steps = 0
         while ev.x - self._adjust_anchor_x >= step:
             self._adjust_anchor_x += step
             self._adjust_fire(ns, PINCH_RIGHT, ev.t_ns)
+            steps += 1
         while self._adjust_anchor_x - ev.x >= step:
             self._adjust_anchor_x -= step
             self._adjust_fire(ns, PINCH_LEFT, ev.t_ns)
+            steps -= 1
+        self._publish_adjust(AdjustPhase.MOVE, ev.t_ns, ev.x, ev.y, steps)
+
+    ADJUST_LOST_GRACE_NS = 1_000_000_000
+
+    def _publish_adjust(self, phase: AdjustPhase, t_ns: int, x: float, y: float, steps: int = 0) -> None:
+        """The overlay's view of the pinch: anchor and pinch point in screen points (SETTLE: both at the pinch)."""
+        ax, ay = (x, y) if phase is AdjustPhase.SETTLE else (self._adjust_anchor_x, self._adjust_anchor_y)
+        sax, say = self.to_screen(ax, ay)
+        sx, sy = self.to_screen(x, y)
+        self.bus.publish(AdjustEvent(t_ns, phase, sax, say, sx, sy, steps))
+
+    def _end_adjust(self, t_ns: int) -> None:
+        """Released, or lost past the grace: END for the overlay, then the menu stays open (chaining)."""
+        self._publish_adjust(AdjustPhase.END, t_ns, self._adjust_anchor_x, self._adjust_anchor_y, self.repeat_count)
+        self._adjust_lost_ns = None
+        self._after_command(t_ns, None)
 
     def _adjust_fire(self, ns: str, gesture: str, t_ns: int) -> None:
         action = self.bindings.lookup(ns, gesture)
@@ -561,6 +597,11 @@ class ModeEngine:
             # moment: the anchor is kept and the scroll resumes when the hand is back
             self._scroll_lost_ns = t_ns
             return
+        if self.state == ADJUST:
+            # the pinch is dropped by the tracker for a moment: the anchor is kept and the pinch
+            # resumes from it without settling again when it is back within ADJUST_LOST_GRACE_NS
+            self._adjust_lost_ns = t_ns
+            return
         if self.state == ARMED:
             self._leader_released = True  # came back within escape_lost: the leader shape is now a command
             self._fired_block = None  # and so is the shape that fired last
@@ -585,6 +626,10 @@ class ModeEngine:
             if self._scroll_lost_ns is not None and t_ns - self._scroll_lost_ns >= self.SCROLL_LOST_GRACE_NS:
                 self._scroll_lost_ns = None
                 self._end_scroll(t_ns)
+            return
+        if self.state == ADJUST:
+            if self._adjust_lost_ns is not None and t_ns - self._adjust_lost_ns >= self.ADJUST_LOST_GRACE_NS:
+                self._end_adjust(t_ns)  # gone for good: the menu stays open, as after a release
             return
         if self.state == DRAGGING:
             if self.drag is not None and self.drag.on_tick(t_ns):
@@ -649,6 +694,7 @@ class ModeEngine:
             self._refresh_on_return = False
             self._slide_shape = None
             self._scroll_shape = None
+            self._adjust_lost_ns = None
         self.bus.publish(
             ModeChanged(t_ns=t_ns, old=old, new=new, namespace=self.namespace, deadline_ns=self._deadline_ns)
         )

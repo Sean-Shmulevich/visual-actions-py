@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
+from enum import Enum
 from typing import Any
 
 from .types import Action, HandFrame, Token
@@ -68,6 +69,27 @@ class PointerMoved:
     x: float
     y: float
     dragging: bool
+
+
+class AdjustPhase(Enum):
+    SETTLE = "settle"  # pinched but not still yet: hold still to set the anchor
+    START = "start"  # settled: the anchor is set here
+    MOVE = "move"  # a pinch frame after settling; `steps` fired on this frame (+ right, - left)
+    END = "end"  # released, fist, or lost past the grace; `steps` is the total fired
+
+
+@dataclass(frozen=True)
+class AdjustEvent:
+    """The media volume pinch (ADJUST), in screen points: the sticky anchor and the pinch point.
+    The anchor moves one adjust_step per step fired, so the ring shows where the next step counts from."""
+
+    t_ns: int
+    phase: AdjustPhase
+    ax: float  # the anchor, in screen points
+    ay: float
+    x: float  # the pinch point now, in screen points
+    y: float
+    steps: int = 0
 
 
 @dataclass(frozen=True)

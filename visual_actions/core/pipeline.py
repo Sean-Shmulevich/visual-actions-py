@@ -108,6 +108,7 @@ class Pipeline:
             drag=self.drag,
             leaders=config.leaders(),
             scroll=self.scroll,
+            to_screen=pointer.pmap.to_screen,
         )
         self._last_veto_ns = -(10**18)
         self._lost_at_ns: int | None = None  # a HandLost not yet applied to the smoother and pinch detector

@@ -24,9 +24,11 @@ from AppKit import (
 )
 
 from ..core.drag import DragEvent, DragPhase
-from ..core.events import Bus, ModeChanged, PointerMoved, SnapPreview, Tick
-from ..core.modes import ARMED, DRAGGING, SCROLL
-from ..core.scroll import ScrollEvent, ScrollPhase
+from ..core.events import AdjustEvent, Bus, ModeChanged, PointerMoved, SnapPreview, Tick
+from ..core.modes import ADJUST, ARMED, DRAGGING, SCROLL
+from ..core.scroll import ScrollEvent
+
+ANCHORED = (SCROLL, ADJUST)  # states drawn as a sticky ring at the anchor and a dot on the hand
 
 CURSOR_SIZE = 26
 
@@ -107,11 +109,12 @@ class CursorOverlay:
         self.frame.setContentView_(FrameView.alloc().initWithFrame_(NSMakeRect(0, 0, screen.size.width, screen.size.height)))
         self.preview = _panel(0, 0, 10, 10, level_offset=1)
         self.preview.setContentView_(PreviewView.alloc().initWithFrame_(NSMakeRect(0, 0, 10, 10)))
-        self.anchor = _panel(0, 0, CURSOR_SIZE, CURSOR_SIZE, level_offset=2)  # the sticky scroll anchor
+        self.anchor = _panel(0, 0, CURSOR_SIZE, CURSOR_SIZE, level_offset=2)  # the sticky scroll / adjust anchor
         self.anchor_view = CursorView.alloc().initWithFrame_(NSMakeRect(0, 0, CURSOR_SIZE, CURSOR_SIZE))
         self.anchor.setContentView_(self.anchor_view)
         self.mode = "idle"
-        bus.subscribe(ScrollEvent, self._on_scroll)
+        bus.subscribe(ScrollEvent, self._on_anchored)
+        bus.subscribe(AdjustEvent, self._on_anchored)
         bus.subscribe(PointerMoved, self._on_pointer)
         bus.subscribe(ModeChanged, self._on_mode)
         bus.subscribe(SnapPreview, self._on_snap)
@@ -126,9 +129,9 @@ class CursorOverlay:
 
     def _on_mode(self, ev: ModeChanged) -> None:
         self.mode = ev.new
-        if ev.new != SCROLL and self.anchor.isVisible():
+        if ev.new not in ANCHORED and self.anchor.isVisible():
             self.anchor.orderOut_(None)
-        if ev.new not in (ARMED, DRAGGING, SCROLL):
+        if ev.new not in (ARMED, DRAGGING, *ANCHORED):
             if self.cursor.isVisible():
                 self.cursor.orderOut_(None)
             if self.frame.isVisible():
@@ -158,16 +161,19 @@ class CursorOverlay:
             self.cursor.orderFrontRegardless()
         self.cursor_view.setNeedsDisplay_(True)
 
-    def _on_scroll(self, ev: ScrollEvent) -> None:
-        if ev.phase is ScrollPhase.END:
+    def _on_anchored(self, ev: ScrollEvent | AdjustEvent) -> None:
+        """A stick scroll or a volume pinch: the same ring and dot. ScrollPhase and AdjustPhase
+        share their member names (SETTLE / START / MOVE / END), so one handler reads both."""
+        phase = ev.phase.name
+        if phase == "END":
             for panel in (self.anchor, self.cursor):
                 if panel.isVisible():
                     panel.orderOut_(None)
             return
-        if ev.phase is ScrollPhase.SETTLE:
+        if phase == "SETTLE":
             self._show(ev.x, ev.y, filled=False)  # hollow: hold still here to set the anchor
             return
-        if ev.phase is ScrollPhase.START:
+        if phase == "START":
             self.anchor_view.filled = False
             self.anchor.setFrameOrigin_((ev.ax - CURSOR_SIZE / 2, self.screen_h - ev.ay - CURSOR_SIZE / 2))
             if not self.anchor.isVisible():
