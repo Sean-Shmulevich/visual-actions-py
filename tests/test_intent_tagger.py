@@ -30,6 +30,14 @@ from visual_actions.intent.tagger import Answer
 SID = "s1/fire/0000"
 
 
+@pytest.fixture(autouse=True)
+def _legacy_routing(monkeypatch: pytest.MonkeyPatch):
+    """The never-ask policy is tested on its own below; the older tests exercise the
+    needs_human routing, so they run with TAGGER_ASK_HUMAN=1 and no OpenRouter key."""
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.setenv("TAGGER_ASK_HUMAN", "1")
+
+
 def _seg(**kw: Any) -> Segment:
     base: dict[str, Any] = {"engine_gesture": "h_left", "engine_action": "Cmd+Tab", "engine_outcome": "cancelled_by_fist", "engine_namespace": "window", "mean_confidence": 0.95, "hand_present_fraction": 1.0, "labelfn_votes": {"fist_after_fire": "misfire"}, "weak_label": "misfire", "weak_weight": 0.6}
     base.update(kw)
@@ -486,3 +494,146 @@ def test_tag_cli_backend_flag(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, c
     monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
     with pytest.raises(SystemExit, match="ANTHROPIC_API_KEY is not set"):
         main(["tag", str(session), "--backend", "claude"])
+
+
+# -- OpenRouterTagger and the never-ask-the-user policy -------------------------------------
+
+
+def _chat(answer: dict[str, Any] | str, model: str = "x") -> dict[str, Any]:
+    text = answer if isinstance(answer, str) else json.dumps(answer)
+    return {"id": "gen-1", "model": model, "choices": [{"index": 0, "message": {"role": "assistant", "content": text}, "finish_reason": "stop"}], "usage": {"prompt_tokens": 1, "completion_tokens": 1}}
+
+
+def _or(urlopen: Any, **kw: Any) -> tagger.OpenRouterTagger:
+    kw.setdefault("sleep", lambda s: None)
+    return tagger.OpenRouterTagger(api_key="or-k", urlopen=urlopen, **kw)
+
+
+def test_openrouter_tagger_request_shape_and_defaults(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.delenv("TAGGER_MODEL", raising=False)
+    monkeypatch.delenv("TAGGER_ESCALATE", raising=False)
+    seen: list[Any] = []
+
+    def urlopen(req, timeout):
+        seen.append(req)
+        return _Resp(_chat(GOOD))
+
+    t = _or(urlopen)
+    assert t.model == "openai/gpt-6.1-sol" and t.escalate_model == "openai/gpt-6-astra" and t.url == "https://openrouter.ai/api/v1/chat/completions"
+    tag = t.tag(_seg(weak_label="misfire", weak_weight=0.9), None, None)
+    req = seen[0]
+    assert req.full_url == tagger.OPENROUTER_URL and req.get_header("Authorization") == "Bearer or-k" and req.get_header("Content-type") == "application/json"
+    body = json.loads(req.data.decode())
+    assert body["model"] == "openai/gpt-6.1-sol"
+    assert body["messages"][0] == {"role": "system", "content": tagger.SYSTEM_PROMPT} and body["messages"][1]["role"] == "user" and "## Engine" in body["messages"][1]["content"]
+    assert tag.verdict is Verdict.MISFIRE and tag.model == "openai/gpt-6.1-sol" and t.calls == 1 and "[escalated" not in tag.reason
+    monkeypatch.setenv("TAGGER_MODEL", "openai/gpt-6-astra-pro")
+    monkeypatch.setenv("TAGGER_ESCALATE", "openai/gpt-6-astra-pro")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "env-or")
+    t2 = tagger.OpenRouterTagger(urlopen=urlopen)
+    assert t2.model == "openai/gpt-6-astra-pro" and t2.escalate_model == "openai/gpt-6-astra-pro" and t2.api_key == "env-or"
+    assert t2.auth_headers() == {"Authorization": "Bearer env-or"}
+
+
+@pytest.mark.parametrize("first", [dict(GOOD, verdict="ambiguous"), dict(GOOD, confidence=0.4), "no json here"])
+def test_openrouter_escalates_to_astra_and_names_it(first: Any, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.delenv("TAGGER_ASK_HUMAN", raising=False)
+    models: list[str] = []
+
+    def urlopen(req, timeout):
+        m = json.loads(req.data.decode())["model"]
+        models.append(m)
+        return _Resp(_chat(first if m == "openai/gpt-6.1-sol" else GOOD))
+
+    t = _or(urlopen, model="openai/gpt-6.1-sol", escalate_model="openai/gpt-6-astra")
+    tag = t.tag(_seg(), None, None)
+    assert models == ["openai/gpt-6.1-sol", "openai/gpt-6-astra"]
+    assert tag.verdict is Verdict.MISFIRE and tag.confidence == 0.9 and tag.model == "openai/gpt-6-astra"
+    assert "[escalated to openai/gpt-6-astra: " in tag.reason and ("ambiguous" in tag.reason or "< 0.75" in tag.reason)
+    assert not tag.needs_human
+
+
+def test_never_ask_policy_and_the_ask_human_switch(monkeypatch: pytest.MonkeyPatch):
+    low = dict(GOOD, confidence=0.3)  # under the floor on both models: the rule would route it
+    t = _or(lambda req, timeout: _Resp(_chat(low)))
+    seg = _seg(weak_label="intended", weak_weight=0.9)  # and it disagrees with a strong weak label
+    monkeypatch.delenv("TAGGER_ASK_HUMAN", raising=False)
+    tag = t.tag(seg, None, None)
+    human, why = tagger.needs_human(tagger.parse_answer(json.dumps(low)), seg, None, None)
+    assert human and len(why) == 2  # the rule still fires and feeds the reason
+    assert not tag.needs_human and "[human: confidence 0.30 < 0.75; disagrees with weak label intended" in tag.reason
+    assert tag.reason.endswith("[escalated to openai/gpt-6-astra: confidence 0.30 < 0.75]")
+    for v in ("0", "no", ""):
+        monkeypatch.setenv("TAGGER_ASK_HUMAN", v)
+        assert not t.tag(seg, None, None).needs_human
+    monkeypatch.setenv("TAGGER_ASK_HUMAN", "1")
+    assert t.tag(seg, None, None).needs_human  # the switch restores routing
+    # the fake tagger follows the same policy
+    monkeypatch.delenv("TAGGER_ASK_HUMAN", raising=False)
+    assert not tagger.FakeTagger(lambda s: tagger.Answer(Verdict.AMBIGUOUS, Intent.UNSURE, Motion.STILL, None, [], 0.1, "r")).tag(seg, None, None).needs_human
+
+
+def test_openrouter_errors_retries_and_cap():
+    def flaky(req, timeout):
+        flaky.n += 1  # type: ignore[attr-defined]
+        if flaky.n == 1:  # type: ignore[attr-defined]
+            raise urllib.error.HTTPError(tagger.OPENROUTER_URL, 503, "err", None, io.BytesIO(b"{}"))  # type: ignore[arg-type]
+        return _Resp(_chat(GOOD))
+
+    flaky.n = 0  # type: ignore[attr-defined]
+    t = _or(flaky, max_retries=2)
+    assert t.complete("openai/gpt-6.1-sol", "p") == json.dumps(GOOD) and t.calls == 2
+
+    def bad(req, timeout):
+        raise urllib.error.HTTPError(tagger.OPENROUTER_URL, 401, "err", None, io.BytesIO(b'{"error":{"message":"bad key"}}'))  # type: ignore[arg-type]
+
+    with pytest.raises(tagger.TaggerError) as ei:
+        _or(bad).complete("m", "p")
+    assert ei.value.status == 401
+    with pytest.raises(tagger.TaggerError):
+        _or(lambda req, timeout: _Resp({"error": {"message": "no credits"}})).complete("m", "p")
+    with pytest.raises(tagger.TaggerError):
+        tagger.OpenRouterTagger(api_key="", urlopen=bad).complete("m", "p")
+    t = _or(lambda req, timeout: _Resp(_chat(GOOD)), max_calls=1)
+    t.complete("m", "p")
+    with pytest.raises(tagger.CallCapExceeded):
+        t.complete("m", "p")
+
+
+def test_make_tagger_prefers_openrouter_when_the_key_is_set(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.delenv("TAGGER_BACKEND", raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-api03-" + "a" * 60)
+    fake = FakeCodex(tmp_path, monkeypatch)
+    fake.answers(json.dumps(GOOD))
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-api03-" + "a" * 60)
+    assert isinstance(tagger.make_tagger(), tagger.CodexTagger)  # codex on PATH beats claude
+    monkeypatch.setenv("OPENROUTER_API_KEY", "or")
+    t = tagger.make_tagger(max_calls=7)
+    assert isinstance(t, tagger.OpenRouterTagger) and t.max_calls == 7  # openrouter beats codex
+    assert isinstance(tagger.make_tagger("codex"), tagger.CodexTagger) and isinstance(tagger.make_tagger("claude"), tagger.ClaudeTagger)
+    monkeypatch.setenv("TAGGER_BACKEND", "openrouter")
+    assert isinstance(tagger.make_tagger(), tagger.OpenRouterTagger)
+    del fake
+
+
+def test_codex_escalates_through_openrouter_to_astra(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.delenv("TAGGER_ASK_HUMAN", raising=False)
+    monkeypatch.delenv("TAGGER_ESCALATE", raising=False)
+    fake = FakeCodex(tmp_path, monkeypatch)
+    fake.answers(json.dumps(dict(GOOD, verdict="ambiguous")))
+    models: list[str] = []
+
+    def urlopen(req, timeout):
+        models.append(json.loads(req.data.decode())["model"])
+        return _Resp(_chat(GOOD))
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "or")
+    t = tagger.CodexTagger(model="m1")
+    assert isinstance(t.escalate_via, tagger.OpenRouterTagger) and t.escalate_via.model == "openai/gpt-6-astra"
+    t.escalate_via = _or(urlopen, model="openai/gpt-6-astra")
+    tag = t.tag(_seg(), None, None)
+    assert t.calls == 1 and models == ["openai/gpt-6-astra"]  # one codex call, one escalation, no think-harder pass
+    assert tag.verdict is Verdict.MISFIRE and tag.model == "openai/gpt-6-astra" and tag.reason.endswith("[escalated to openai/gpt-6-astra: ambiguous]") and not tag.needs_human
+    monkeypatch.delenv("OPENROUTER_API_KEY")
+    assert tagger.CodexTagger(model="m1").escalate_via is None
+    del fake

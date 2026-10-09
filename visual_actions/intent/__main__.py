@@ -150,6 +150,8 @@ def cmd_tag(args: argparse.Namespace) -> int:
     if not (d / "segments.jsonl").exists():
         raise SystemExit(f"{d / 'segments.jsonl'} is missing: run `segments` first")
     judge: tagger.Tagger = tagger.FakeTagger() if args.dry_run else tagger.make_tagger(args.backend, max_calls=args.max_calls)
+    if isinstance(judge, tagger.OpenRouterTagger) and not judge.api_key:
+        raise SystemExit("OPENROUTER_API_KEY is not set; --backend codex uses the Codex CLI, --dry-run prints the prompts without calling")
     if isinstance(judge, tagger.ClaudeTagger) and not judge.api_key:
         raise SystemExit("ANTHROPIC_API_KEY is not set; --backend codex uses the Codex CLI, --dry-run prints the prompts without calling")
     if not args.dry_run:
@@ -227,7 +229,7 @@ def build_parser() -> argparse.ArgumentParser:
     t.add_argument("--limit", type=int)
     t.add_argument("--dry-run", action="store_true", help="print the prompts, call nothing, write nothing")
     t.add_argument("--max-calls", type=int, default=400, help="spend cap for this run")
-    t.add_argument("--backend", choices=["codex", "claude", "fake"], help="default: TAGGER_BACKEND, else codex when the CLI is on PATH, else claude with an API key")
+    t.add_argument("--backend", choices=["openrouter", "codex", "claude", "fake"], help="default: TAGGER_BACKEND, else openrouter with OPENROUTER_API_KEY, else codex when the CLI is on PATH, else claude with an API key")
 
     r = sub.add_parser("review", help="the human queue: one page, one key per answer -> intent/human.jsonl")
     r.add_argument("session")

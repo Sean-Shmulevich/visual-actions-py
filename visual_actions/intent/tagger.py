@@ -10,7 +10,13 @@ Two backends share the prompt: CodexTagger runs the OpenAI Codex CLI non-interac
 message read from a file) and is the default when the binary is on PATH; ClaudeTagger
 calls the Anthropic Messages API directly over urllib (no SDK in this project): POST
 https://api.anthropic.com/v1/messages with x-api-key and anthropic-version headers.
+OpenRouterTagger reuses ClaudeTagger's flow over the OpenAI chat shape at OpenRouter.
 `make_tagger` picks one from TAGGER_BACKEND, the PATH and the environment.
+
+Never-ask-the-user policy: whenever the first answer is ambiguous or under the confidence
+floor the same prompt goes to a stronger reasoning model (Astra over OpenRouter) and that
+answer wins; `needs_human` is still computed and kept in the reason (it feeds the decisions
+dashboard and the audit), but a tag only asks for a human when TAGGER_ASK_HUMAN=1.
 """
 
 from __future__ import annotations
@@ -50,6 +56,10 @@ ANTHROPIC_VERSION = "2023-06-01"
 OAUTH_BETA = "oauth-2025-04-20"  # an OAuth access token (sk-ant-oat...) goes on Authorization: Bearer with this beta
 DEFAULT_MODEL = "claude-haiku-5-5"
 DEFAULT_ESCALATE = "claude-sonnet-5-5"
+OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+OPENROUTER_MODEL = "openai/gpt-6.1-sol"
+OPENROUTER_ESCALATE = "openai/gpt-6-astra"  # a stronger reasoning model for the ambiguous ones
+ASK_HUMAN_ENV = "TAGGER_ASK_HUMAN"
 CODEX_BINARY = "codex"
 _REAL_API_KEY = re.compile(r"^sk-ant-api\d{2}-[A-Za-z0-9_-]{30,}$")
 CONFIDENCE_FLOOR = 0.75
@@ -253,9 +263,33 @@ class CallCapExceeded(RuntimeError):
     pass
 
 
-def make_tag(segment: Segment, answer: Answer, cosmos: CosmosVerdict | None, jev: JevVerdict | None, model: str) -> Tag:
+def ask_human_enabled() -> bool:
+    """The never-ask-the-user policy: tags route to a human only when TAGGER_ASK_HUMAN=1."""
+    return os.environ.get(ASK_HUMAN_ENV, "").strip().lower() in ("1", "true", "yes")
+
+
+def escalation_note(model: str, why: str) -> str:
+    return f"[escalated to {model}: {why}]"
+
+
+def escalation_reason(answer: Answer, floor: float) -> str | None:
+    """Why a first answer is sent to the stronger model, or None when it stands."""
+    if answer.verdict is Verdict.AMBIGUOUS:
+        return "ambiguous"
+    if answer.confidence < floor:
+        return f"confidence {answer.confidence:.2f} < {floor}"
+    return None
+
+
+def make_tag(segment: Segment, answer: Answer, cosmos: CosmosVerdict | None, jev: JevVerdict | None, model: str, escalated: str | None = None) -> Tag:
+    """`escalated` is the escalation note when a stronger model answered; it goes on the
+    reason so the decisions dashboard shows which decisions the AI took on its own."""
     human, why = needs_human(answer, segment, cosmos, jev)
     reason = answer.reason if not why else f"{answer.reason} [human: {'; '.join(why)}]"
+    if escalated:
+        reason = f"{reason} {escalated}".strip()
+    if not ask_human_enabled():
+        human = False
     return Tag(segment.segment_id, answer.verdict, answer.intent, answer.motion, answer.true_gesture, list(answer.tags), round(answer.confidence, 3), human, reason, model)
 
 
@@ -299,11 +333,14 @@ class ClaudeTagger:
         text = self.complete(self.model, prompt)
         answer = parse_answer(text)
         model = self.model
-        if (answer.verdict is Verdict.AMBIGUOUS or answer.confidence < self.floor) and self.escalate_model and self.escalate_model != self.model:
+        why = escalation_reason(answer, self.floor)
+        note = None
+        if why and self.escalate_model and self.escalate_model != self.model:
             text = self.complete(self.escalate_model, prompt)
             answer = parse_answer(text)
             model = self.escalate_model
-        return make_tag(segment, answer, cosmos, jev, model)
+            note = escalation_note(model, why)
+        return make_tag(segment, answer, cosmos, jev, model, note)
 
     def auth_headers(self) -> dict[str, str]:
         """API keys go on x-api-key; an OAuth access token on Authorization: Bearer + the oauth beta."""
@@ -347,14 +384,68 @@ class ClaudeTagger:
         return "".join(b.get("text", "") for b in resp.get("content", []) if isinstance(b, dict) and b.get("type") == "text")
 
 
+class OpenRouterTagger(ClaudeTagger):
+    """ClaudeTagger's flow over the OpenAI chat shape at OpenRouter: the system prompt is the
+    system message, Bearer OPENROUTER_API_KEY. Model from TAGGER_MODEL (default
+    openai/gpt-6.1-sol); an ambiguous or under-floor answer goes to TAGGER_ESCALATE (default
+    openai/gpt-6-astra, a stronger reasoning model) and Tag.model names the one that answered."""
+
+    def __init__(self, api_key: str | None = None, model: str | None = None, escalate_model: str | None = None, url: str = OPENROUTER_URL, **kw: Any):
+        super().__init__(api_key=api_key or os.environ.get("OPENROUTER_API_KEY", ""), model=model or os.environ.get("TAGGER_MODEL", OPENROUTER_MODEL), escalate_model=escalate_model or os.environ.get("TAGGER_ESCALATE", OPENROUTER_ESCALATE), url=url, **kw)
+
+    def auth_headers(self) -> dict[str, str]:
+        return {"Authorization": f"Bearer {self.api_key}"}
+
+    def complete(self, model: str, prompt: str) -> str:
+        """One chat completion; returns the assistant text ('' when there is none)."""
+        if self.calls >= self.max_calls:
+            raise CallCapExceeded(f"tagger call cap {self.max_calls} reached")
+        if not self.api_key:
+            raise TaggerError(401, "no API key: set OPENROUTER_API_KEY")
+        body = json.dumps({"model": model, "messages": [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": prompt}], "temperature": 0}).encode("utf-8")
+        headers = {**self.auth_headers(), "content-type": "application/json"}
+        last: TaggerError | None = None
+        for attempt in range(self.max_retries + 1):
+            self.calls += 1
+            req = urllib.request.Request(self.url, data=body, headers=headers, method="POST")
+            try:
+                with self._urlopen(req, timeout=self.timeout_s) as r:
+                    resp = json.loads(r.read().decode("utf-8"))
+                break
+            except urllib.error.HTTPError as e:
+                text = e.read().decode("utf-8", "replace") if hasattr(e, "read") else ""
+                last = TaggerError(e.code, text)
+                if e.code not in self.RETRY_STATUSES:
+                    raise last from None
+            except urllib.error.URLError as e:
+                last = TaggerError(0, str(e.reason))
+            if attempt < self.max_retries:
+                self._sleep(self.backoff_s * (2**attempt))
+        else:
+            assert last is not None
+            raise last
+        if not isinstance(resp, dict):
+            raise TaggerError(0, "malformed response")
+        if resp.get("error") and not resp.get("choices"):
+            raise TaggerError(0, json.dumps(resp.get("error")))
+        self.last_raw = json.dumps(resp)
+        choices = resp.get("choices") or []
+        msg = choices[0].get("message", {}) if choices and isinstance(choices[0], dict) else {}
+        content = msg.get("content", "")
+        if isinstance(content, list):
+            content = "".join(part.get("text", "") for part in content if isinstance(part, dict))
+        return str(content or "")
+
+
 class CodexTagger:
     """The OpenAI Codex CLI, non-interactive: `codex exec --ephemeral -s read-only
     --skip-git-repo-check -C <tmp> --output-schema <schema> -o <out> -` with the prompt on
     stdin; the last message (the JSON answer) is read from <out>. The model is `model`,
     else TAGGER_MODEL, else the CLI's config default (`-m` omitted). An ambiguous or
-    under-floor answer is escalated: to TAGGER_ESCALATE (or `escalate_model`) when set,
-    else a second call on the same model with the think-harder instruction. `max_calls`
-    caps one run. Never a shell string: argv only."""
+    under-floor answer is escalated once: through an OpenRouterTagger to the Astra model
+    when OPENROUTER_API_KEY is set (`escalate_via`), else to TAGGER_ESCALATE (or
+    `escalate_model`) when set, else a second call on the same model with the think-harder
+    instruction. `max_calls` caps one run. Never a shell string: argv only."""
 
     def __init__(
         self,
@@ -365,9 +456,13 @@ class CodexTagger:
         timeout_s: float = 120.0,
         binary: str = CODEX_BINARY,
         run: Callable[..., Any] = subprocess.run,
+        escalate_via: OpenRouterTagger | None = None,
     ):
         self.model = model or os.environ.get("TAGGER_MODEL") or None
         self.escalate_model = escalate_model or os.environ.get("TAGGER_ESCALATE") or None
+        if escalate_via is None and os.environ.get("OPENROUTER_API_KEY"):
+            escalate_via = OpenRouterTagger(model=OPENROUTER_ESCALATE, escalate_model=OPENROUTER_ESCALATE, max_calls=max_calls)
+        self.escalate_via = escalate_via
         self.floor = floor
         self.max_calls = max_calls
         self.timeout_s = timeout_s
@@ -387,14 +482,20 @@ class CodexTagger:
         text = self.complete(self.model, single_turn_prompt(user))
         answer = parse_answer(text)
         model = self.model_name(self.model)
-        if answer.verdict is Verdict.AMBIGUOUS or answer.confidence < self.floor:
-            if self.escalate_model and self.escalate_model != self.model:
+        why = escalation_reason(answer, self.floor)
+        note = None
+        if why:
+            if self.escalate_via is not None:
+                text = self.escalate_via.complete(self.escalate_via.model, user)
+                model = self.escalate_via.model
+            elif self.escalate_model and self.escalate_model != self.model:
                 text = self.complete(self.escalate_model, single_turn_prompt(user))
                 model = self.model_name(self.escalate_model)
             else:
                 text = self.complete(self.model, single_turn_prompt(user, harder=True))
             answer = parse_answer(text)
-        return make_tag(segment, answer, cosmos, jev, model)
+            note = escalation_note(model, why)
+        return make_tag(segment, answer, cosmos, jev, model, note)
 
     def complete(self, model: str | None, prompt: str) -> str:
         """One `codex exec` run; returns the last message text ('' when none was written)."""
@@ -443,24 +544,29 @@ class FakeTagger:
 
 
 def make_tagger(backend: str | None = None, max_calls: int = 400) -> Tagger:
-    """`backend`, else TAGGER_BACKEND, else: codex when the codex binary is on PATH, claude
-    when ANTHROPIC_API_KEY looks like a real sk-ant-api key, else a FakeTagger with a warning."""
+    """`backend`, else TAGGER_BACKEND, else: openrouter when OPENROUTER_API_KEY is set, codex
+    when the codex binary is on PATH, claude when ANTHROPIC_API_KEY looks like a real
+    sk-ant-api key, else a FakeTagger with a warning."""
     name = (backend or os.environ.get("TAGGER_BACKEND") or "").strip().lower()
     if not name:
-        if shutil.which(CODEX_BINARY):
+        if os.environ.get("OPENROUTER_API_KEY"):
+            name = "openrouter"
+        elif shutil.which(CODEX_BINARY):
             name = "codex"
         elif _REAL_API_KEY.match(os.environ.get("ANTHROPIC_API_KEY", "")):
             name = "claude"
         else:
-            warnings.warn("no tagger backend: codex is not on PATH and ANTHROPIC_API_KEY is not an sk-ant-api key; using FakeTagger (canned answers)", RuntimeWarning, stacklevel=2)
+            warnings.warn("no tagger backend: OPENROUTER_API_KEY is not set, codex is not on PATH and ANTHROPIC_API_KEY is not an sk-ant-api key; using FakeTagger (canned answers)", RuntimeWarning, stacklevel=2)
             return FakeTagger()
+    if name == "openrouter":
+        return OpenRouterTagger(max_calls=max_calls)
     if name == "codex":
         return CodexTagger(max_calls=max_calls)
     if name == "claude":
         return ClaudeTagger(max_calls=max_calls)
     if name == "fake":
         return FakeTagger()
-    raise ValueError(f"unknown tagger backend {name!r}: choose codex, claude or fake")
+    raise ValueError(f"unknown tagger backend {name!r}: choose openrouter, codex, claude or fake")
 
 
 # -- the pass --------------------------------------------------------------------------------
