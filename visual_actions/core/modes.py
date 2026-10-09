@@ -28,6 +28,10 @@ DRAGGING--pinch END--------------------> ARMED (chaining) / IDLE
 DRAGGING--hand lost--------------------> DRAGGING, suspended (window stays, red frame)
 suspended--pinch back within grace-----> DRAGGING resumed from the window's current place
 suspended--hand back unpinched / grace-> IDLE (dropped in place)
+ARMED   --slide shape (bindings "<shape>:left" / "<shape>:right")--> the wrist is anchored; a sideways
+                                           travel >= repeat_slide fires the action of that direction and
+                                           re-anchors (chain); a still hand re-anchors so drift never fires;
+                                           the shape itself never fires on sight
 ARMED   --repeatable action fires------> REPEAT(deadline = now + repeat_window)
 REPEAT  --same shape, wrist slid sideways >= repeat_slide--> fire again, deadline refreshed
 REPEAT  --deadline-----------------------> ARMED (chaining) / IDLE
@@ -151,6 +155,8 @@ class ModeEngine:
         self._adjust_settle_xy = (0.5, 0.5)
         self._adjust_settled = False
         self._refresh_on_return = False  # ARMED kept across a loss: the returning hand's leader shape renews the deadline
+        self._slide_shape: str | None = None  # ARMED: the slide shape being tracked, and where its wrist was anchored
+        self._slide_anchor_x = 0.5
 
     def projected_hold_ns(self, t_ns: int) -> float:
         """Evidence extrapolated to t_ns at the last token's rate, so arming and the ring are smooth."""
@@ -243,7 +249,29 @@ class ModeEngine:
                     self._fired_block = None
                 else:
                     self._fired_gap += 1
-            action = self.bindings.lookup(self.namespace or self.default_namespace, tok.name)
+            ns = self.namespace or self.default_namespace
+            slide = self.slide_actions(ns, tok.name)
+            if slide is not None:
+                # a slide shape: direction of wrist travel picks the action, the shape alone never fires
+                if tok.confidence < self.min_token_confidence:
+                    return
+                if self._slide_shape != tok.name:
+                    self._slide_shape, self._slide_anchor_x = tok.name, tok.x
+                    return
+                dx = tok.x - self._slide_anchor_x  # user frame: +x is the user's right
+                if abs(dx) >= self.timing.repeat_slide:
+                    action = slide[1] if dx > 0 else slide[0]
+                    self._slide_anchor_x = tok.x
+                    if action is not None:
+                        self._deadline_ns = tok.t_ns + self.timing.command_timeout_ns
+                        self.repeat_count += 1
+                        self.bus.publish(ModeChanged(tok.t_ns, ARMED, ARMED, self.namespace, self._deadline_ns))
+                        self.fire(action, tok.t_ns)
+                elif tok.still:
+                    self._slide_anchor_x = tok.x
+                return
+            self._slide_shape = None
+            action = self.bindings.lookup(ns, tok.name)
             if action is None or tok.confidence < self.min_token_confidence:
                 return
             if tok.name != self._fire_gesture:
@@ -316,6 +344,11 @@ class ModeEngine:
             self.drag.on_pinch(ev)
             if not self.drag.dragging:
                 self._after_command(ev.t_ns, None)  # dropped: grab another window, or anything else
+
+    def slide_actions(self, ns: str, shape: str) -> tuple[Action | None, Action | None] | None:
+        """(left, right) actions when `shape` is bound as a slide in `ns` ("<shape>:left" / "<shape>:right")."""
+        left, right = self.bindings.lookup(ns, f"{shape}:left"), self.bindings.lookup(ns, f"{shape}:right")
+        return None if left is None and right is None else (left, right)
 
     def _adjust_bound(self) -> bool:
         ns = self.namespace or self.default_namespace
@@ -399,6 +432,7 @@ class ModeEngine:
         self._leader_released, self._release_tokens = False, 0
         self._fired_block, self._fired_gap = None, 0
         self._refresh_on_return = False
+        self._slide_shape = None
         self._go(ARMED, t_ns)
 
     def on_release_at_loss(self, t_ns: int) -> None:
@@ -422,6 +456,7 @@ class ModeEngine:
         self._fist_since_ns = None
         self._last_token = None
         self._idle_block = None  # the hand left: whatever it shows next is a fresh start
+        self._slide_shape = None  # a slide re-anchors when the hand is back
         if self.state == ARMED:
             self._leader_released = True  # came back within escape_lost: the leader shape is now a command
             self._fired_block = None  # and so is the shape that fired last
@@ -501,6 +536,7 @@ class ModeEngine:
             self._repeat_action, self._repeat_gesture, self.repeat_count = None, None, 0
             self._returned_at_ns = None
             self._refresh_on_return = False
+            self._slide_shape = None
         self.bus.publish(
             ModeChanged(t_ns=t_ns, old=old, new=new, namespace=self.namespace, deadline_ns=self._deadline_ns)
         )
