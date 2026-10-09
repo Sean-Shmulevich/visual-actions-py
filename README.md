@@ -40,9 +40,15 @@ a rolling event log. Disable with `dashboard = false` under `[feedback]` in the 
 ## Cosmos on your own GPU
 
 The intent passes judge recorded moments with NVIDIA Cosmos Reason. Hosted, they use
-`NVIDIA_API_KEY`. With a GPU box that serves Cosmos through an OpenAI-compatible server
-(vLLM or NIM on its port 8000) but cannot be reached from this Mac, let the box open the
-connection instead: enable Remote Login on the Mac (System Settings → General → Sharing),
+`NVIDIA_API_KEY`. With a GPU box that has the model but no vLLM, serve it with the standalone
+`tools/cosmos_server.py` (transformers; copy the file alone to the box):
+
+```sh
+pip install "transformers>=4.57" accelerate pillow opencv-python-headless
+python cosmos_server.py --model nvidia/Cosmos-Reason2-8B --port 8000
+```
+
+If the box cannot be reached from this Mac, let the box open the connection instead: enable Remote Login on the Mac (System Settings → General → Sharing),
 give the box an SSH key, and from the box run
 
 ```sh
@@ -56,5 +62,6 @@ COSMOS_URL=http://127.0.0.1:8000/v1 COSMOS_MODEL=nvidia/cosmos-reason2-8b \
   uv run python -m visual_actions.intent cosmos <session> --limit 20
 ```
 
-No key is sent to a self-hosted URL. Tailscale on both machines does the same job without
-the tunnel (point `COSMOS_URL` at the box's tailnet address).
+No key is sent to a self-hosted URL. With Tailscale on both machines there is no tunnel: start
+the server with `--host 0.0.0.0` (or the box's 100.x address) and set
+`COSMOS_URL=http://<box-tailscale-ip>:8000/v1`.
