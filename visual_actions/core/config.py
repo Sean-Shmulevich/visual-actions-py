@@ -166,6 +166,23 @@ class PresenceConfig:
 
 
 @dataclass
+class LearnConfig:
+    """The nightly learning job (learn/): sessions -> labels -> a per-user candidate model,
+    promoted only when it beats the live one on held-out sessions."""
+
+    enabled: bool = True
+    hour: int = 2  # local hour the launchd job runs at
+    user_weight: float = 2.0  # sample weight multiplier for this user's own frames (public / synthetic frames weigh 1.0)
+    min_new_frames: int = 200  # skip training when the day exported fewer labelled frames than this
+    holdout_sessions: int = 3  # newest sessions from earlier days, held out of training and replayed for the gate
+    location: str = ""  # free camera / location tag written into the model manifest (e.g. "desk-macbook")
+    accuracy_margin: float = 0.01  # gate: held-out weighted frame accuracy may drop at most this much
+    intended_keep: float = 0.95  # gate: weak-intended fires must stay at least this fraction of the champion's
+    judge_min_conf: float = 0.7  # judge tags below this confidence are not exported
+    keep_versions: int = 5  # user model versions kept on disk
+
+
+@dataclass
 class NamespaceConfig:
     leader: str = "open_palm"
     bindings: list[dict[str, Any]] = field(default_factory=list)
@@ -180,6 +197,7 @@ class Config:
     drag: DragConfig = field(default_factory=DragConfig)
     leader: LeaderConfig = field(default_factory=LeaderConfig)
     presence: PresenceConfig = field(default_factory=PresenceConfig)
+    learn: LearnConfig = field(default_factory=LearnConfig)
     namespaces: dict[str, NamespaceConfig] = field(default_factory=dict)
 
     def leaders(self) -> dict[str, str]:
@@ -258,6 +276,7 @@ def load_config(path: Path | None) -> Config:
     _merge(cfg.drag, data.get("drag", {}))
     _merge(cfg.leader, data.get("leader", {}))
     _merge(cfg.presence, data.get("presence", {}))
+    _merge(cfg.learn, data.get("learn", {}))
     if "namespaces" in data:
         # User bindings override defaults per gesture; default bindings the file does not
         # mention are kept, so a config saved before a gesture existed still gets it.
