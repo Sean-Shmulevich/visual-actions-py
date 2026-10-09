@@ -5,6 +5,7 @@ from __future__ import annotations
 import queue
 import subprocess
 import time
+from datetime import date
 from typing import TYPE_CHECKING
 
 import rumps
@@ -17,6 +18,7 @@ from ..core.presence import PresenceFilter
 from ..paths import config_path
 from ..platform import factory
 from ..session import SessionRecorder
+from . import learning_menu as lm
 from .capture import CaptureThread
 from .preview import DebugPreview
 
@@ -39,12 +41,18 @@ class VisualActionsApp(rumps.App):
         self.status_item = rumps.MenuItem("Status: starting")
         self._feedback: list[object] = []  # SoundFeedback / CursorOverlay / Overlay, closed on a rebuild
         self.dashboard: Dashboard | None = None
+        self._learn_proc: subprocess.Popen | None = None  # "Improve now" child, polled on the tick
+        self._learn_log: object | None = None
+        self._learn_refresh_at = 0.0
+        self._marked_today = 0
+        self._marked_day = date.today()  # noqa: DTZ011 - "today" in the user's local day
         self._build(cfg)
 
         self.perm_item = rumps.MenuItem("Permissions…", callback=self.show_permissions)
         self.toggle_item = rumps.MenuItem("Stop", callback=self.toggle)
         self.dry_item = rumps.MenuItem("Dry run (print only)", callback=self.toggle_dry)
         self.dry_item.state = dry_run
+        self.learn_menu = self._build_learning_menu()
         self.menu = [
             self.status_item,
             self.perm_item,
@@ -56,8 +64,11 @@ class VisualActionsApp(rumps.App):
             rumps.MenuItem("Open dashboard", callback=self.open_dashboard),
             rumps.MenuItem("Open sessions folder", callback=self.open_sessions),
             None,
+            self.learn_menu,
+            None,
             rumps.MenuItem("Quit", callback=self.quit),
         ]
+        self._refresh_learning()
         self.timer = rumps.Timer(self.tick, cfg.timing.tick_ms / 1000)
         self._install_terminate_hook()
 
@@ -193,6 +204,97 @@ class VisualActionsApp(rumps.App):
         if self.capture and self.capture.error:
             self._set_status(f"camera error: {self.capture.error}")
             self.stop()
+        self._poll_learning()
+
+    # -- Learning submenu -------------------------------------------------------
+
+    def _build_learning_menu(self) -> rumps.MenuItem:
+        """Learning ▸ status line (disabled) / Improve nightly at HH:00 (checkbox) / Improve now /
+        Last report…. The job is visual_actions.learn, imported lazily: when it is missing the
+        items stay, disabled, titled "not available", so the rest of the app is unaffected."""
+        menu = rumps.MenuItem("Learning")
+        self.learn_status_item = rumps.MenuItem("Learning: …")
+        _enabled, hour = lm.learn_settings(self.cfg)
+        self._learn_hour = hour
+        sched = lm.schedule_module()
+        self.nightly_item = rumps.MenuItem(lm.nightly_title(hour), callback=self.toggle_nightly if sched is not None else None)
+        if sched is None:
+            self.nightly_item.title = "Improve nightly (not available)"
+        self.improve_item = rumps.MenuItem("Improve now", callback=self.improve_now)
+        self.report_item = rumps.MenuItem("Last report…", callback=self.open_report)
+        menu.update([self.learn_status_item, None, self.nightly_item, self.improve_item, self.report_item])
+        return menu
+
+    def _refresh_learning(self) -> None:
+        """Re-read last.json, the schedule and the reports folder into the submenu."""
+        self._learn_refresh_at = time.monotonic()
+        self._marked_today, self._marked_day = lm.marks_today(self._marked_today, self._marked_day, date.today())  # noqa: DTZ011
+        running = self._learn_proc is not None and self._learn_proc.poll() is None
+        self.learn_status_item.title = lm.format_status(lm.load_last(), self._marked_today, running)
+        sched = lm.schedule_module()
+        if sched is not None:
+            try:
+                self.nightly_item.state = lm.schedule_installed(sched.status())
+            except Exception as exc:  # noqa: BLE001 - launchctl trouble is not a reason to break the menu
+                self.nightly_item.state = False
+                self._set_status(f"learning schedule: {exc}")
+        self.improve_item.set_callback(None if running or not lm.learn_available() else self.improve_now)
+        self.improve_item.title = "Improve now" if lm.learn_available() else "Improve now (not available)"
+        if running:
+            self.improve_item.title = "Improving…"
+        self.report_item.set_callback(self.open_report if lm.latest_report() is not None else None)
+
+    def _poll_learning(self) -> None:
+        proc = self._learn_proc
+        if proc is not None and proc.poll() is not None:
+            self._learn_proc = None
+            if self._learn_log is not None:
+                self._learn_log.close()  # type: ignore[attr-defined]
+                self._learn_log = None
+            self._refresh_learning()
+            last = lm.load_last()
+            decision = (last or {}).get("decision") or (last or {}).get("status")
+            self._set_status(f"learning finished: {decision}" if proc.returncode == 0 and decision else f"learning exit {proc.returncode}; see {lm.run_log_path()}")
+            return
+        if time.monotonic() - self._learn_refresh_at >= 30:
+            self._refresh_learning()
+
+    def toggle_nightly(self, item) -> None:
+        sched = lm.schedule_module()
+        if sched is None:
+            return
+        try:
+            if item.state:
+                sched.uninstall()
+            else:
+                sched.install(self._learn_hour)
+        except Exception as exc:  # noqa: BLE001 - surface it in the status line, never a dialog
+            self._set_status(f"learning schedule: {exc}")
+        self._refresh_learning()
+
+    def improve_now(self, _item) -> None:
+        """Run the learning job as a child process; the tick polls it, nothing blocks here."""
+        if self._learn_proc is not None and self._learn_proc.poll() is None:
+            return
+        lm.learn_dir().mkdir(parents=True, exist_ok=True)
+        log = lm.run_log_path().open("a", encoding="utf-8")
+        try:
+            self._learn_proc = subprocess.Popen(lm.run_command(), cwd=lm.repo_root(), stdout=log, stderr=subprocess.STDOUT)
+        except OSError as exc:
+            log.close()
+            self._set_status(f"learning: {exc}")
+            return
+        self._learn_log = log
+        self._set_status("learning running…")
+        self._refresh_learning()
+
+    def open_report(self, _item) -> None:
+        report = lm.latest_report()
+        if report is None:
+            self._set_status("learning: no report yet")
+            self._refresh_learning()
+            return
+        subprocess.run(["open", str(report)], check=False)
 
     # -- menu callbacks -------------------------------------------------------
 
@@ -240,10 +342,9 @@ class VisualActionsApp(rumps.App):
         meta: dict = {"dry_run": self.dry_run, "model_path": None, "screen": None}
         path = getattr(self.pipeline.recognizer, "model_path", None)
         meta["model_path"] = str(path) if path is not None else None
-        try:
-            meta["screen"] = list(self.services.automation.screen_size())
-        except Exception:  # noqa: BLE001 - best-effort
-            pass
+        size = getattr(self.services.automation, "screen_size", None)
+        if callable(size):
+            meta["screen"] = list(size())
         return meta
 
     def _capture_stats(self) -> dict:
