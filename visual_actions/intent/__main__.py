@@ -137,9 +137,11 @@ def cmd_tag(args: argparse.Namespace) -> int:
     d = session / "intent"
     if not (d / "segments.jsonl").exists():
         raise SystemExit(f"{d / 'segments.jsonl'} is missing: run `segments` first")
-    judge = tagger.ClaudeTagger(max_calls=args.max_calls)
-    if not args.dry_run and not judge.api_key:
-        raise SystemExit("ANTHROPIC_API_KEY is not set; --dry-run prints the prompts without calling")
+    judge: tagger.Tagger = tagger.FakeTagger() if args.dry_run else tagger.make_tagger(args.backend, max_calls=args.max_calls)
+    if isinstance(judge, tagger.ClaudeTagger) and not judge.api_key:
+        raise SystemExit("ANTHROPIC_API_KEY is not set; --backend codex uses the Codex CLI, --dry-run prints the prompts without calling")
+    if not args.dry_run:
+        print(f"backend: {type(judge).__name__} model={getattr(judge, 'model', None) or 'default'}")
     n = tagger.run_tag(d / "segments.jsonl", d / "cosmos.jsonl", d / "jev.jsonl", d / "tags.jsonl", judge, limit=args.limit, dry_run=args.dry_run, log=print)
     print(f"{d / 'tags.jsonl'}: {n} {'prompts shown (dry run)' if args.dry_run else 'new tags'}")
     return 0
@@ -213,6 +215,7 @@ def build_parser() -> argparse.ArgumentParser:
     t.add_argument("--limit", type=int)
     t.add_argument("--dry-run", action="store_true", help="print the prompts, call nothing, write nothing")
     t.add_argument("--max-calls", type=int, default=400, help="spend cap for this run")
+    t.add_argument("--backend", choices=["codex", "claude", "fake"], help="default: TAGGER_BACKEND, else codex when the CLI is on PATH, else claude with an API key")
 
     r = sub.add_parser("review", help="the human queue: one page, one key per answer -> intent/human.jsonl")
     r.add_argument("session")
