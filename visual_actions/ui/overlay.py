@@ -57,6 +57,7 @@ from Quartz import (
 )
 
 from ..core.drag import DragEvent
+from ..core.scroll import ScrollEvent
 from ..core.events import (
     ActionFired,
     Bus,
@@ -166,6 +167,7 @@ class Overlay:
         bus.subscribe(HoldProgress, self._on_hold)
         bus.subscribe(TokenEmitted, self._on_token)
         bus.subscribe(DragEvent, self._on_drag)
+        bus.subscribe(ScrollEvent, self._on_scroll)
         bus.subscribe(ActionFired, self._on_action)
         bus.subscribe(SnapPreview, self._on_snap)
         bus.subscribe(HandLost, self._on_hand_lost)
@@ -311,6 +313,9 @@ class Overlay:
 
     def _on_drag(self, ev: DragEvent) -> None:
         self.model.on_drag(ev)
+
+    def _on_scroll(self, ev: ScrollEvent) -> None:
+        self.model.on_scroll(ev)
 
     def _on_action(self, ev: ActionFired) -> None:
         self.model.on_action(ev)

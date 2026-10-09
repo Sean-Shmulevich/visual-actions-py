@@ -164,6 +164,9 @@ class CursorOverlay:
                 if panel.isVisible():
                     panel.orderOut_(None)
             return
+        if ev.phase is ScrollPhase.SETTLE:
+            self._show(ev.x, ev.y, filled=False)  # hollow: hold still here to set the anchor
+            return
         if ev.phase is ScrollPhase.START:
             self.anchor_view.filled = False
             self.anchor.setFrameOrigin_((ev.ax - CURSOR_SIZE / 2, self.screen_h - ev.ay - CURSOR_SIZE / 2))

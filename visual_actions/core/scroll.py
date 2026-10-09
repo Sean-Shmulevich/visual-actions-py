@@ -22,6 +22,7 @@ from .pointer import PointerMap
 
 
 class ScrollPhase(Enum):
+    SETTLE = "settle"  # the scroll shape is shown but not still yet: hold still to set the anchor
     START = "start"
     MOVE = "move"
     END = "end"
@@ -62,6 +63,11 @@ class ScrollController:
         u = min(1.0, (mag - self.deadzone) / max(self.span - self.deadzone, 1e-6))
         speed = self.max_lines_s * u**self.curve
         return speed if dy < 0 else -speed  # hand up -> scroll up
+
+    def settling(self, t_ns: int, x: float, y: float) -> None:
+        """The shape is up but moving: the overlay shows where the anchor will be set."""
+        sx, sy = self.pmap.to_screen(x, y)
+        self.bus.publish(ScrollEvent(t_ns, ScrollPhase.SETTLE, sx, sy, sx, sy))
 
     def start(self, t_ns: int, x: float, y: float) -> None:
         self.active = True

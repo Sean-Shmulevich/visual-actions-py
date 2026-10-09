@@ -85,3 +85,43 @@ def test_stick_velocity_curve():
     assert 80 <= sum(sent) <= 90
     c.end(S)
     assert not c.active and c.total_lines == sum(sent)
+
+
+def test_moving_scroll_hand_shows_where_the_anchor_will_be_and_a_brief_loss_keeps_the_scroll():
+    from visual_actions.core.events import HandLost
+    from visual_actions.core.scroll import ScrollEvent, ScrollPhase
+
+    cfg = default_config()
+    bus = Bus()
+    events = []
+    bus.subscribe(ScrollEvent, events.append)
+    mock = MockAutomation(windows=[WindowInfo(1, 1, "App", "Big", Rect(0, 0, 1440, 900))], screen=(1440, 900))
+    pipe = Pipeline(bus, cfg, Dispatcher(bus, mock))
+    t = 0.0
+    for _ in range(75):
+        bus.publish(HandSeen(hand_frame("open_palm", int(t * S), center=(0.5, 0.5))))
+        bus.publish(Tick(int(t * S)))
+        t += 1 / 30
+    assert pipe.engine.state == ARMED
+    for k in range(20):  # the scroll hand drifting: not still yet
+        bus.publish(HandSeen(hand_frame("palm_side", int(t * S), center=(0.5 + 0.01 * k, 0.5))))
+        bus.publish(Tick(int(t * S)))
+        t += 1 / 30
+    assert any(e.phase is ScrollPhase.SETTLE for e in events) and pipe.engine.state == ARMED
+    for _ in range(15):
+        bus.publish(HandSeen(hand_frame("palm_side", int(t * S), center=(0.7, 0.5))))
+        bus.publish(Tick(int(t * S)))
+        t += 1 / 30
+    assert pipe.engine.state == SCROLL
+    bus.publish(HandLost(int(t * S), "edge", "fingers out"))
+    bus.publish(Tick(int((t + 0.5) * S)))
+    assert pipe.engine.state == SCROLL  # a half-second loss keeps the anchor
+    t += 0.6
+    for _ in range(15):
+        bus.publish(HandSeen(hand_frame("palm_side", int(t * S), center=(0.7, 0.35))))
+        bus.publish(Tick(int(t * S)))
+        t += 1 / 30
+    assert pipe.engine.state == SCROLL and any(c[0] == "scroll" for c in mock.calls)
+    bus.publish(HandLost(int(t * S), "edge", "gone"))
+    bus.publish(Tick(int((t + 1.2) * S)))
+    assert pipe.engine.state == ARMED  # gone for good: the scroll ended, the menu stays

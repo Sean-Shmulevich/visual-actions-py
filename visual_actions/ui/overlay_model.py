@@ -17,6 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ..core.drag import DragEvent, DragPhase
+from ..core.scroll import ScrollEvent, ScrollPhase
 from ..core.events import (
     ActionFired,
     HandLost,
@@ -99,6 +100,8 @@ class OverlayModel:
         self.last_token = ""
         self.hand_lost = False
         self.drag_window = ""
+        self.scroll_settling_ns: int | None = None  # the scroll shape is up but moving
+        self.scroll_velocity = 0.0
         self.drag_lost_since_ns: int | None = None
         self.snap_zone: str | None = None
         self.repeat_count = 0
@@ -148,6 +151,18 @@ class OverlayModel:
             self._flash(Card("fired", "checkmark.circle", ev.action.name, "fired", GREEN), ev.t_ns)
         else:
             self._flash(Card("failed", "exclamationmark.triangle", ev.action.name, ev.message or "failed", RED), ev.t_ns)
+
+    def on_scroll(self, ev: ScrollEvent) -> None:
+        if ev.phase is ScrollPhase.SETTLE:
+            self.scroll_settling_ns = ev.t_ns
+        elif ev.phase is ScrollPhase.START:
+            self.scroll_settling_ns = None
+            self.scroll_velocity = 0.0
+        elif ev.phase is ScrollPhase.MOVE:
+            self.scroll_velocity = ev.velocity
+        elif ev.phase is ScrollPhase.END:
+            self.scroll_settling_ns = None
+            self._flash(Card("scrolled", "checkmark.circle", "Scrolled", f"{abs(ev.lines)} lines", PURPLE), ev.t_ns)
 
     def on_drag(self, ev: DragEvent) -> None:
         if ev.phase is DragPhase.PAUSE:
@@ -203,6 +218,12 @@ class OverlayModel:
                 trailing=f"{min(100, int(p * 100))}%",
                 persistent=True,
             )
+        if self.mode == "scroll":
+            v = self.scroll_velocity
+            sub = "raise to scroll up, lower to scroll down" if abs(v) < 1 else ("scrolling up" if v > 0 else "scrolling down")
+            return Card("scroll", "arrow.up.and.down", "Scrolling", sub, PURPLE, trailing=f"{abs(v):.0f}/s" if abs(v) >= 1 else "", persistent=True)
+        if self.mode == ARMED and self.scroll_settling_ns is not None and now - self.scroll_settling_ns < 600_000_000:
+            return Card("scroll_settle", "hand.raised", "Hold still", "to set the scroll point", PURPLE, persistent=True)
         if self.mode == DRAGGING:
             if self.drag_lost_since_ns is not None:
                 left = max(0, self.grace_ns - (now - self.drag_lost_since_ns))

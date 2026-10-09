@@ -128,6 +128,7 @@ class ModeEngine:
         self.scroll = scroll
         self._scroll_shape: str | None = None
         self._scroll_gap = 0
+        self._scroll_lost_ns: int | None = None  # SCROLL: when the hand was lost; the scroll waits scroll_lost_grace
         self.fist_min_confidence = fist_min_confidence
         # leader gesture -> namespace it opens; open_palm alone keeps the single-mode behavior
         self.leaders = dict(leaders) if leaders else {OPEN_PALM: default_namespace}
@@ -197,6 +198,7 @@ class ModeEngine:
             self._go(IDLE, tok.t_ns)
             return
         if self.state == SCROLL:
+            self._scroll_lost_ns = None
             if tok.name == self._scroll_shape:
                 self._scroll_gap = 0
             else:
@@ -510,8 +512,11 @@ class ModeEngine:
         action = self.bindings.lookup(self.namespace or self.default_namespace, tok.name)
         if action is None or action.kind.value != "scroll" or action.arg("mode") != "stick":
             return False
-        if tok.confidence < self.min_token_confidence or not tok.still:
-            return True  # the shape, but not settled yet: nothing else may fire on it
+        if tok.confidence < self.min_token_confidence:
+            return True
+        if not tok.still:
+            self.scroll.settling(tok.t_ns, tok.x, tok.y)  # the shape, moving: hold still to set the anchor
+            return True
         self._scroll_shape, self._scroll_gap = tok.name, 0
         self.scroll.start(tok.t_ns, tok.x, tok.y)
         self._go(SCROLL, tok.t_ns)
@@ -526,6 +531,7 @@ class ModeEngine:
     def on_hand_position(self, t_ns: int, x: float, y: float) -> None:
         """Per frame while scrolling: the wrist in the user frame."""
         if self.state == SCROLL and self.scroll is not None:
+            self._scroll_lost_ns = None
             self.scroll.update(t_ns, x, y)
 
     def on_release_at_loss(self, t_ns: int) -> None:
@@ -551,7 +557,10 @@ class ModeEngine:
         self._idle_block = None  # the hand left: whatever it shows next is a fresh start
         self._slide_shape = None  # a slide re-anchors when the hand is back
         if self.state == SCROLL:
-            self._end_scroll(t_ns)  # back to the menu, which then keeps its own deadline across the loss
+            # the scroll hand sits near the top and left edges, where the tracker drops it for a
+            # moment: the anchor is kept and the scroll resumes when the hand is back
+            self._scroll_lost_ns = t_ns
+            return
         if self.state == ARMED:
             self._leader_released = True  # came back within escape_lost: the leader shape is now a command
             self._fired_block = None  # and so is the shape that fired last
@@ -569,7 +578,14 @@ class ModeEngine:
             if not self.drag.dragging:
                 self._after_command(t_ns, None)  # a pending release was committed instead
 
+    SCROLL_LOST_GRACE_NS = 1_000_000_000
+
     def on_tick(self, t_ns: int) -> None:
+        if self.state == SCROLL:
+            if self._scroll_lost_ns is not None and t_ns - self._scroll_lost_ns >= self.SCROLL_LOST_GRACE_NS:
+                self._scroll_lost_ns = None
+                self._end_scroll(t_ns)
+            return
         if self.state == DRAGGING:
             if self.drag is not None and self.drag.on_tick(t_ns):
                 self._after_command(t_ns, None)  # a release outlived its re-grab grace
