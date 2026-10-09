@@ -93,8 +93,12 @@ class Judges:
             from ..intent.jev import JevClient
 
             j.jev = JevClient()
+        elif os.environ.get("OPENROUTER_API_KEY"):
+            from ..intent.jev import OpenRouterJev
+
+            j.jev = OpenRouterJev()
         else:
-            log("jev: TYPESAFE_API_KEY not set, pass skipped")
+            log("jev: neither TYPESAFE_API_KEY nor OPENROUTER_API_KEY is set, pass skipped")
         from ..intent import tagger as tagmod
 
         factory = getattr(tagmod, "make_tagger", None)

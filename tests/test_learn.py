@@ -351,7 +351,7 @@ def test_judge_passes_are_best_effort_and_judge_labels_export_without_fist(data_
 def test_judges_from_env_skip_every_pass_without_credentials_and_never_use_the_fake_tagger(monkeypatch: pytest.MonkeyPatch):
     from visual_actions.intent import tagger as tagmod
 
-    for k in ("NVIDIA_API_KEY", "TYPESAFE_API_KEY", "JEV_API_KEY"):
+    for k in ("NVIDIA_API_KEY", "TYPESAFE_API_KEY", "JEV_API_KEY", "OPENROUTER_API_KEY"):
         monkeypatch.delenv(k, raising=False)
     monkeypatch.setattr(tagmod, "make_tagger", lambda: FakeTagger())
     lines: list[str] = []

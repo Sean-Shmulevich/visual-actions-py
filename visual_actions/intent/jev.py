@@ -27,6 +27,13 @@ Verified REST shape (docs.typesafe.ai/api, /introduction/quickstart, /primitives
                              "probabilities": {"<option>": p, ...}, "confidence": 0.8}},
         "usage": {"input_tokens": n, "output_tokens": n}}
     Errors: 401 bad key, 422 malformed question, 429 rate limit, 529 overloaded.
+
+OpenRouterJev answers the same questions with a chat model over OpenRouter (POST
+https://openrouter.ai/api/v1/chat/completions, OpenAI shape, Bearer OPENROUTER_API_KEY) and
+returns TypeSafe's response shape, so parse_response and everything downstream are shared.
+The chat model is asked for JSON only: one probability per noul id and, for the choice
+question, the picked option plus a probability per option; probabilities are normalised in
+code and the choice confidence is derived as (p_max - 1/n) / (1 - 1/n).
 """
 
 from __future__ import annotations
@@ -34,6 +41,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import time
 import urllib.error
 import urllib.request
@@ -44,8 +52,11 @@ from typing import Any, Protocol
 from .events import Event, parse_events
 from .schema import CosmosVerdict, JevVerdict, Segment, SegmentKind, append_jsonl, by_id, read_jsonl
 
+_JSON_BLOCK = re.compile(r"\{.*\}", re.DOTALL)
 JEV_URL = "https://api.typesafe.ai/v1/systemone"
 JEV_MODEL = "jev-latest"
+OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+OPENROUTER_JEV_MODEL = "openai/gpt-6.1-sol"
 MAX_STATE_CHARS = 6000  # well under JEV's context; it prefers a small clean state
 NONE_OPTION = "none"
 
@@ -371,6 +382,141 @@ class JevClient:
                 self._sleep(self.backoff_s * (2**attempt))
         assert last is not None
         raise last
+
+
+class OpenRouterJev:
+    """The same questions put to a chat model over OpenRouter; answers come back in
+    TypeSafe's response shape. Model from `model`, else JEV_MODEL env, else
+    openai/gpt-6.1-sol. Retries and backoff as JevClient."""
+
+    RETRY_STATUSES = JevClient.RETRY_STATUSES
+    SYSTEM = (
+        "You are a calibrated decision model. You get a STATE (a text description of a moment) and numbered QUESTIONS. "
+        "Answer each by id with a probability between 0 and 1 that the statement is true, read against its criteria when given. "
+        "For a choice question give the picked option and a probability per option (they should sum to 1). "
+        "Answer with ONE JSON object and nothing else."
+    )
+
+    def __init__(
+        self,
+        api_key: str | None = None,
+        model: str | None = None,
+        url: str = OPENROUTER_URL,
+        timeout_s: float = 120.0,
+        max_retries: int = 4,
+        backoff_s: float = 1.0,
+        sleep: Callable[[float], None] = time.sleep,
+        urlopen: Callable[..., Any] = urllib.request.urlopen,
+    ):
+        self.api_key = api_key or os.environ.get("OPENROUTER_API_KEY") or ""
+        self.model = model or os.environ.get("JEV_MODEL") or OPENROUTER_JEV_MODEL
+        self.url = url
+        self.timeout_s = timeout_s
+        self.max_retries = max_retries
+        self.backoff_s = backoff_s
+        self._sleep = sleep
+        self._urlopen = urlopen
+        self.calls = 0
+        self.last_raw = ""
+
+    @staticmethod
+    def build_prompt(state: str, questions: dict[str, dict[str, Any]]) -> str:
+        lines = ["STATE:", state, "", "QUESTIONS:"]
+        shape: dict[str, Any] = {}
+        for qid, q in questions.items():
+            if q.get("type") == "choice":
+                lines.append(f"- {qid} (choice): {q.get('instructions', '')}")
+                for opt, desc in (q.get("criteria") or {}).items():
+                    lines.append(f"    option {opt}: {desc}")
+                shape[qid] = {"choice": "<option>", "probabilities": {opt: "<0..1>" for opt in (q.get("criteria") or {})}}
+            else:
+                lines.append(f"- {qid} (probability true): {q.get('instructions', '')}")
+                for k, desc in (q.get("criteria") or {}).items():
+                    lines.append(f"    {k}: {desc}")
+                shape[qid] = "<0..1>"
+        lines += ["", "Answer with exactly this JSON shape and nothing else:", json.dumps(shape)]
+        return "\n".join(lines)
+
+    def request(self, state: str, questions: dict[str, dict[str, Any]]) -> dict[str, Any]:
+        if not self.api_key:
+            raise JevError(401, "no API key: set OPENROUTER_API_KEY")
+        text = self.complete(self.build_prompt(state, questions))
+        return self.to_response(text, questions, self.model)
+
+    def complete(self, prompt: str) -> str:
+        body = json.dumps({"model": self.model, "messages": [{"role": "system", "content": self.SYSTEM}, {"role": "user", "content": prompt}], "temperature": 0}).encode("utf-8")
+        headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
+        last: JevError | None = None
+        for attempt in range(self.max_retries + 1):
+            req = urllib.request.Request(self.url, data=body, headers=headers, method="POST")
+            self.calls += 1
+            try:
+                with self._urlopen(req, timeout=self.timeout_s) as r:
+                    resp = json.loads(r.read().decode("utf-8"))
+                break
+            except urllib.error.HTTPError as e:
+                text = e.read().decode("utf-8", "replace") if hasattr(e, "read") else ""
+                last = JevError(e.code, text)
+                if e.code not in self.RETRY_STATUSES:
+                    raise last from None
+            except urllib.error.URLError as e:
+                last = JevError(0, str(e.reason))
+            if attempt < self.max_retries:
+                self._sleep(self.backoff_s * (2**attempt))
+        else:
+            assert last is not None
+            raise last
+        if isinstance(resp, dict) and resp.get("error") and not resp.get("choices"):
+            raise JevError(0, json.dumps(resp.get("error")))
+        self.last_raw = json.dumps(resp)
+        choices = resp.get("choices") or [] if isinstance(resp, dict) else []
+        msg = choices[0].get("message", {}) if choices and isinstance(choices[0], dict) else {}
+        content = msg.get("content", "")
+        if isinstance(content, list):  # some providers return content parts
+            content = "".join(part.get("text", "") for part in content if isinstance(part, dict))
+        return str(content or "")
+
+    @staticmethod
+    def to_response(text: str, questions: dict[str, dict[str, Any]], model: str) -> dict[str, Any]:
+        """The chat model's JSON (first {...} block, leniently) -> TypeSafe's response shape.
+        Missing answers are left out so parse_response's partial handling applies."""
+        m = _JSON_BLOCK.search(text or "")
+        d: Any = {}
+        if m:
+            try:
+                d = json.loads(m.group(0))
+            except json.JSONDecodeError:
+                d = {}
+        if not isinstance(d, dict):
+            d = {}
+        answers: dict[str, Any] = {}
+        for qid, q in questions.items():
+            a = d.get(qid)
+            if q.get("type") == "choice":
+                opts = list(q.get("criteria") or {})
+                probs = _normalise(a.get("probabilities") if isinstance(a, dict) else None, opts)
+                choice = a.get("choice") if isinstance(a, dict) else (a if isinstance(a, str) else None)
+                if choice not in opts:
+                    choice = max(probs, key=lambda o: probs[o]) if probs else None
+                if choice is None:
+                    continue
+                n = len(opts)
+                conf = (probs.get(choice, 0.0) - 1 / n) / (1 - 1 / n) if n > 1 else 1.0
+                answers[qid] = {"type": "choice", "choice": choice, "probabilities": probs, "confidence": round(min(1.0, max(0.0, conf)), 4)}
+            else:
+                p = a.get("probability", a.get("noul")) if isinstance(a, dict) else a
+                if isinstance(p, bool) or not isinstance(p, (int, float)):
+                    continue
+                answers[qid] = {"type": "noul", "noul": round(min(1.0, max(0.0, float(p))), 4)}
+        return {"model": model, "answers": answers}
+
+
+def _normalise(raw: Any, opts: list[str]) -> dict[str, float]:
+    probs = {o: max(0.0, float(raw[o])) for o in opts if isinstance(raw, dict) and isinstance(raw.get(o), (int, float)) and not isinstance(raw.get(o), bool)}
+    total = sum(probs.values())
+    if total > 0:
+        return {o: round(probs.get(o, 0.0) / total, 4) for o in opts}
+    return {}
 
 
 class FakeJev:

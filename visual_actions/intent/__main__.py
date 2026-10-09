@@ -10,8 +10,12 @@ import argparse
 import sys
 from collections.abc import Callable
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from .schema import Segment, SegmentKind, read_jsonl, write_jsonl
+
+if TYPE_CHECKING:
+    from . import jev
 
 
 def resolve_session(arg: str) -> Path:
@@ -111,6 +115,19 @@ def cmd_cosmos(args: argparse.Namespace) -> int:
     return 0
 
 
+def make_jev() -> jev.Jev:
+    """TYPESAFE_API_KEY / JEV_API_KEY -> JevClient; else OPENROUTER_API_KEY -> OpenRouterJev."""
+    import os
+
+    from . import jev as jevmod
+
+    if os.environ.get("TYPESAFE_API_KEY") or os.environ.get("JEV_API_KEY"):
+        return jevmod.JevClient()
+    if os.environ.get("OPENROUTER_API_KEY"):
+        return jevmod.OpenRouterJev()
+    raise SystemExit("no judge key: set TYPESAFE_API_KEY (JEV over TypeSafe) or OPENROUTER_API_KEY (a chat model over OpenRouter); --fake runs without the network")
+
+
 def cmd_jev(args: argparse.Namespace) -> int:
     from . import jev
 
@@ -118,13 +135,8 @@ def cmd_jev(args: argparse.Namespace) -> int:
     d = session / "intent"
     if not (d / "segments.jsonl").exists():
         raise SystemExit(f"{d / 'segments.jsonl'} is missing: run `segments` first")
-    client: jev.Jev
-    if args.fake:
-        client = jev.FakeJev()
-    else:
-        client = jev.JevClient()
-        if not client.api_key:
-            raise SystemExit("TYPESAFE_API_KEY (or JEV_API_KEY) is not set; --fake runs without the network")
+    client: jev.Jev = jev.FakeJev() if args.fake else make_jev()
+    print(f"client: {type(client).__name__} model={getattr(client, 'model', None)}")
     n = jev.run_jev(d / "segments.jsonl", d / "cosmos.jsonl", d / "jev.jsonl", client, limit=args.limit, log=print)
     print(f"{d / 'jev.jsonl'}: {n} new verdicts")
     return 0
@@ -208,7 +220,7 @@ def build_parser() -> argparse.ArgumentParser:
     j = sub.add_parser("jev", help="pass 2a: JEV answers atomic questions over each segment's text state -> intent/jev.jsonl")
     j.add_argument("session")
     j.add_argument("--limit", type=int)
-    j.add_argument("--fake", action="store_true", help="canned answers, no network")
+    j.add_argument("--fake", action="store_true", help="canned answers, no network (default client: JevClient with TYPESAFE_API_KEY, else OpenRouterJev with OPENROUTER_API_KEY)")
 
     t = sub.add_parser("tag", help="pass 2b: a reasoning model tags each segment and flags the ones a human must see -> intent/tags.jsonl")
     t.add_argument("session")
