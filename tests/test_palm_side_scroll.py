@@ -63,7 +63,7 @@ def test_scroll_hand_never_arms_the_menu_and_stick_scrolls_once_armed():
         bus.publish(Tick(int(t * S)))
         t += 1 / 30
     assert any(c[0] == "scroll" and c[2] < 0 for c in mock.calls[before:])
-    for _ in range(20):  # the shape changes: scroll ends, menu stays open
+    for _ in range(45):  # the shape changes for 1.5 s: scroll ends, menu stays open
         bus.publish(HandSeen(hand_frame("open_palm", int(t * S), center=(0.5, 0.5))))
         bus.publish(Tick(int(t * S)))
         t += 1 / 30
@@ -123,5 +123,5 @@ def test_moving_scroll_hand_shows_where_the_anchor_will_be_and_a_brief_loss_keep
         t += 1 / 30
     assert pipe.engine.state == SCROLL and any(c[0] == "scroll" for c in mock.calls)
     bus.publish(HandLost(int(t * S), "edge", "gone"))
-    bus.publish(Tick(int((t + 1.2) * S)))
+    bus.publish(Tick(int((t + 2.3) * S)))
     assert pipe.engine.state == ARMED  # gone for good: the scroll ended, the menu stays

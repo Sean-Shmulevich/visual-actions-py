@@ -215,9 +215,11 @@ class ModeEngine:
             self._scroll_lost_ns = None
             if tok.name == self._scroll_shape:
                 self._scroll_gap = 0
-            else:
+            elif tok.name != "none" and tok.confidence >= 0.6:
+                # only a confident different shape ends the scroll; 'none' and unsure reads are the
+                # scroll hand mid-motion (2026-10-09 15:46 session: scrolls ended on a single flicker)
                 self._scroll_gap += 1
-                if self._scroll_gap >= 2:
+                if self._scroll_gap >= self.SCROLL_GAP_TOKENS:
                     self._end_scroll(tok.t_ns)
             return
         if self.state == ADJUST:
@@ -661,7 +663,8 @@ class ModeEngine:
             if not self.drag.dragging:
                 self._after_command(t_ns, None)  # a pending release was committed instead
 
-    SCROLL_LOST_GRACE_NS = 1_000_000_000
+    SCROLL_LOST_GRACE_NS = 2_000_000_000  # the scroll hand works at the frame's edge; a loss waits this long for it
+    SCROLL_GAP_TOKENS = 4  # confident tokens of another shape in a row that end a scroll (1 s)
 
     def on_tick(self, t_ns: int) -> None:
         if self.state == SCROLL:

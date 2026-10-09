@@ -46,9 +46,9 @@ class ScrollController:
     scroll: Callable[[int, int], None]  # (dx, dy) in lines; the driver's scroll
     pmap: PointerMap  # hand point -> screen point, for the overlay only
     deadzone: float = 0.03  # offset (fraction of frame height) that does nothing
-    span: float = 0.25  # offset at which the speed reaches max_lines_s
-    max_lines_s: float = 90.0
-    curve: float = 1.5  # speed = max * ((offset - deadzone) / (span - deadzone)) ** curve
+    span: float = 0.22  # offset at which the speed reaches max_lines_s
+    max_lines_s: float = 240.0
+    curve: float = 1.6  # speed = max * ((offset - deadzone) / (span - deadzone)) ** curve: slow near the dot, fast far out
     active: bool = False
     total_lines: int = 0
     _anchor: tuple[float, float] = (0.5, 0.5)

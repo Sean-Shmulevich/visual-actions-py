@@ -159,9 +159,9 @@ class ScrollConfig:
     """Stick scrolling with the scroll hand (core/scroll.py): offsets are fractions of frame height."""
 
     deadzone: float = 0.03  # hand within this of the anchor: no scroll
-    span: float = 0.25  # offset at which the speed reaches max_lines_s
-    max_lines_s: float = 90.0  # top speed, lines per second
-    curve: float = 1.5  # speed curve exponent: 1 = linear, higher = gentler near the anchor
+    span: float = 0.22  # offset at which the speed reaches max_lines_s
+    max_lines_s: float = 240.0  # top speed, lines per second (90 felt slow, 2026-10-09)
+    curve: float = 1.6  # speed curve exponent: 1 = linear, higher = gentler near the anchor, faster far out
 
 
 @dataclass
