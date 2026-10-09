@@ -308,7 +308,7 @@ def test_self_hosted_url_needs_no_key(monkeypatch):
             return False
 
         def read(self):
-            return b'{"choices":[{"message":{"content":"<answer>{\"intent\":\"dead\",\"person_present\":false,\"hand_present\":false,\"attention_to_screen\":\"unknown\",\"arm_raised_toward_camera\":false,\"face_touched\":false,\"hand_description\":\"\",\"motion\":\"still\",\"reasoning\":\"\",\"confidence\":0.9,\"sub_spans\":[]}</answer>"}}]}'
+            return b'{"choices":[{"message":{"content":"ok"}}]}'
 
     def opener(req, timeout):
         seen["url"] = req.full_url
