@@ -129,7 +129,7 @@ class CursorOverlay:
 
     def _on_mode(self, ev: ModeChanged) -> None:
         self.mode = ev.new
-        if ev.new not in ANCHORED and self.anchor.isVisible():
+        if ev.new not in (ARMED, *ANCHORED) and self.anchor.isVisible():
             self.anchor.orderOut_(None)
         if ev.new not in (ARMED, DRAGGING, *ANCHORED):
             if self.cursor.isVisible():

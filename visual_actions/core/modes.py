@@ -184,6 +184,7 @@ class ModeEngine:
         self._slide_anchor = (0.5, 0.5)
         self._slide_gap = 0  # other tokens seen since the slide shape; SLIDE_GAP_TOKENS of them drop the anchor
         self._slide_out: str | None = None  # flick slides: the direction fired, until the hand is back at the anchor
+        self._slide_last = (0.5, 0.5)  # the slide shape's last wrist position (a loss mid-stroke completes the stroke)
 
     def projected_hold_ns(self, t_ns: int) -> float:
         """Evidence extrapolated to t_ns at the last token's rate, so arming and the ring are smooth."""
@@ -298,7 +299,7 @@ class ModeEngine:
                 # a flicker (none, the model's other guess) between two slide tokens keeps the anchor
                 self._slide_gap += 1
                 if self._slide_gap >= self.SLIDE_GAP_TOKENS:
-                    self._slide_shape = None
+                    self._end_slide(tok.t_ns)
             action = self.bindings.lookup(ns, tok.name)
             if action is None or tok.confidence < self.min_token_confidence:
                 return
@@ -396,12 +397,15 @@ class ModeEngine:
             return True
         self._slide_gap = 0
         if self._slide_shape != tok.name:
-            # the shape is anchored only once it is still: a finger raised fast into position is
-            # not a slide (2026-10-09: point-up switched desktops when the hand arrived quickly)
-            if tok.still:
-                self._slide_shape, self._slide_anchor = tok.name, (tok.x, tok.y)
-                self._slide_out = None
+            # anchored where the shape first appears, no wait: the sticky dot shows the spot, a
+            # jump of SLIDE_JUMP steps in one token re-anchors without firing (the hand arriving)
+            self._slide_shape, self._slide_anchor = tok.name, (tok.x, tok.y)
+            self._slide_out = None
+            self._slide_last = (tok.x, tok.y)
+            self._publish_adjust(AdjustPhase.START, tok.t_ns, tok.x, tok.y)
             return True
+        self._slide_last = (tok.x, tok.y)
+        self._publish_slide_move(tok.t_ns, tok.x, tok.y)
         dx, dy = tok.x - self._slide_anchor[0], tok.y - self._slide_anchor[1]  # user frame: +x right, +y down
         step = self.timing.repeat_slide
         for a in slide.values():
@@ -566,6 +570,35 @@ class ModeEngine:
         self._go(SCROLL, tok.t_ns)
         return True
 
+    def _complete_slide_on_loss(self, t_ns: int) -> None:
+        """The flick carried the hand out of the frame: that completes the stroke. The anchor is
+        kept, so the hand coming back toward it is the return, never the opposite switch."""
+        ns = self.namespace or self.default_namespace
+        slide = self.slide_actions(ns, self._slide_shape or "")
+        if slide is None or self._slide_out is not None:
+            return
+        dx, dy = self._slide_last[0] - self._slide_anchor[0], self._slide_last[1] - self._slide_anchor[1]
+        if max(abs(dx), abs(dy)) < self.timing.repeat_slide / 2:
+            return
+        direction = ("right" if dx > 0 else "left") if abs(dx) >= abs(dy) else ("down" if dy > 0 else "up")
+        self._slide_out = direction
+        action = slide.get(direction)
+        if action is not None:
+            self.repeat_count += 1
+            self.fire(action, t_ns)
+
+    def _publish_slide_move(self, t_ns: int, x: float, y: float) -> None:
+        sax, say = self.to_screen(*self._slide_anchor)
+        sx, sy = self.to_screen(x, y)
+        self.bus.publish(AdjustEvent(t_ns, AdjustPhase.MOVE, sax, say, sx, sy, 0))
+
+    def _end_slide(self, t_ns: int) -> None:
+        if self._slide_shape is not None:
+            ax, ay = self.to_screen(*self._slide_anchor)
+            self.bus.publish(AdjustEvent(t_ns, AdjustPhase.END, ax, ay, ax, ay, 0))
+        self._slide_shape = None
+        self._slide_out = None
+
     def _end_scroll(self, t_ns: int) -> None:
         if self.scroll is not None:
             self.scroll.end(t_ns)
@@ -599,7 +632,8 @@ class ModeEngine:
         self._fist_since_ns = None
         self._last_token = None
         self._idle_block = None  # the hand left: whatever it shows next is a fresh start
-        self._slide_shape = None  # a slide re-anchors when the hand is back
+        if self._slide_shape is not None and self.state == ARMED:
+            self._complete_slide_on_loss(t_ns)  # the anchor stays through the loss
         if self.state == SCROLL:
             # the scroll hand sits near the top and left edges, where the tracker drops it for a
             # moment: the anchor is kept and the scroll resumes when the hand is back
@@ -701,6 +735,7 @@ class ModeEngine:
             self._returned_at_ns = None
             self._refresh_on_return = False
             self._slide_shape = None
+            self._slide_out = None
             self._scroll_shape = None
             self._adjust_lost_ns = None
         self.bus.publish(

@@ -45,6 +45,19 @@ def test_slide_right_then_left_switches_desktops_and_the_shape_alone_never_fires
     assert eng.state == ARMED and all(m.new == ARMED for m in modes[-3:])  # each step renews the menu
 
 
+def test_flick_anchors_at_once_and_a_loss_mid_stroke_completes_it_without_a_return_switch():
+    eng, fired = make_flick()
+    eng.on_token(tok("point_up", 1.2, 0.50))  # moving on arrival: anchored here anyway
+    eng.on_token(tok("point_up", 1.4, 0.44))  # heading left, under a step
+    eng.on_hand_lost(int(1.5 * S))  # out of the frame mid-stroke: the flick completes
+    assert fired == ["Desktop left"]
+    eng.on_token(tok("point_up", 2.0, 0.40))  # back in frame, still left of the anchor
+    eng.on_token(tok("point_up", 2.2, 0.49))  # the return: never a right
+    assert fired == ["Desktop left"]
+    eng.on_token(tok("point_up", 2.4, 0.62))  # a fresh flick right from the anchor
+    assert fired == ["Desktop left", "Desktop right"]
+
+
 def test_a_still_hand_re_anchors_so_drift_never_switches():
     eng, fired, _ = make()
     eng.on_token(tok("point_up", 1.2, 0.50, still=True))
