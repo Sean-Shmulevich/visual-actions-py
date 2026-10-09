@@ -17,6 +17,7 @@ from .events import Event
 
 FIST_AFTER_S = 3.0
 REDO_WINDOW_S = 4.0
+HUMAN_WRONG_S = 10.0
 LOW_CONF = 0.7
 CLEAN_CONF = 0.9
 REPEATABLE_ACTIONS = ("Previous tab", "Next tab", "Volume up", "Volume down")
@@ -122,6 +123,21 @@ def clean_command(events: list[Event], i: int) -> str | None:
     return "intended"
 
 
+# -- the human marker (fires and arms) -----------------------------------------------------
+
+
+def human_said_wrong(events: list[Event], i: int) -> str | None:
+    """The person pressed "that was wrong" in the menu bar: a `human` line (`last action
+    wrong`, or `last arm wrong` when nothing fired) within 10 s of the event and before any
+    later fire. The strongest weak label there is, so it outweighs every heuristic."""
+    for x in _after(events, i, HUMAN_WRONG_S):
+        if x.kind == "human" and "wrong" in x.text:
+            return "misfire"
+        if x.kind == "action":
+            return None  # a later command; the marker, if any, is about that one
+    return None
+
+
 # -- arms ----------------------------------------------------------------------------------
 
 
@@ -165,12 +181,14 @@ FIRE_FNS: dict[str, tuple[Fn, float]] = {
     "token_flip_around_fire": (token_flip_around_fire, 0.4),
     "face_veto_near": (face_veto_near, 0.5),
     "clean_command": (clean_command, 0.7),
+    "human_said_wrong": (human_said_wrong, 1.0),
 }
 
 ARM_FNS: dict[str, tuple[Fn, float]] = {
     "arm_then_fist": (arm_then_fist, 0.6),
     "arm_timed_out": (arm_timed_out, 0.4),
     "arm_then_command": (arm_then_command, 0.7),
+    "human_said_wrong": (human_said_wrong, 1.0),
 }
 
 

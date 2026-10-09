@@ -21,7 +21,7 @@ _MODE = re.compile(r"^(\w+) -> (\w+)(?: \[(\w+)\])?")
 class Event:
     t: float  # elapsed seconds
     wall: str
-    kind: str  # token | mode | hand | action | drag | snap | veto | session
+    kind: str  # token | mode | hand | action | drag | snap | veto | session | human (the menu bar "that was wrong" marker)
     text: str
 
     # -- convenience views ------------------------------------------------------
