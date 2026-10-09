@@ -164,7 +164,7 @@ def cmd_tag(args: argparse.Namespace) -> int:
 def cmd_review(args: argparse.Namespace) -> int:
     from .review import serve
 
-    return serve(resolve_session(args.session), port=args.port)
+    return serve(resolve_session(args.session), port=args.port, decisions=args.decisions)
 
 
 def cmd_export(args: argparse.Namespace) -> int:
@@ -234,6 +234,7 @@ def build_parser() -> argparse.ArgumentParser:
     r = sub.add_parser("review", help="the human queue: one page, one key per answer -> intent/human.jsonl")
     r.add_argument("session")
     r.add_argument("--port", type=int, default=8766)
+    r.add_argument("--decisions", action="store_true", help="read-only dashboard of every tag the AI made (verdict, reason, escalations), in time order")
 
     e = sub.add_parser("export", help="labelled frames -> datasets/<class>/review-*.jsonl, segments -> datasets/intent/<session>.jsonl")
     e.add_argument("session")

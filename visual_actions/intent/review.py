@@ -7,6 +7,11 @@ engine event (arm, fire) has not been judged at all. A small deterministic audit
 confident tags is queued too, so the judges are checked. Already-labelled ids are skipped, the
 queue is ordered by how much a label is worth, and capped.
 
+With decisions=True the same page is a read-only dashboard of what the AI decided: every
+tagged segment (plus untagged fire / arm segments, marked "not judged yet") in time order,
+uncapped, with the tag's verdict and reason, a summary of counts by verdict and how many were
+escalated to the stronger model; labels and undo answer 403 there.
+
 Each answer is one key and one appended line in <session>/intent/human.jsonl. Standard library
 only, like ui/dashboard.py; clips come from intent/clips.py when it is importable and the page
 falls back to a skeleton strip, then to the text panel alone.
@@ -45,8 +50,10 @@ HIGH_CONF = 0.8
 DOUBTFUL_WEAK = ("misfire", "unsure")
 
 # Priority buckets, lowest first in the queue.
-DISAGREEMENT, HIGH_MISFIRE, AUDIT, REST = 0, 1, 2, 3
-BUCKET_NAMES = {DISAGREEMENT: "judge vs labelfn disagree", HIGH_MISFIRE: "confident misfire", AUDIT: "audit sample", REST: "needs a look"}
+DISAGREEMENT, HIGH_MISFIRE, AUDIT, REST, DECISION = 0, 1, 2, 3, 4
+BUCKET_NAMES = {DISAGREEMENT: "judge vs labelfn disagree", HIGH_MISFIRE: "confident misfire", AUDIT: "audit sample", REST: "needs a look", DECISION: "decision"}
+ESCALATED_MARK = "[escalated"
+NOT_JUDGED = "not judged yet"
 
 # Key -> engine gesture, shown as the legend on the page.
 GESTURE_KEYS: dict[str, str | None] = {
@@ -156,9 +163,25 @@ def _value(item: ReviewItem) -> float:
     return seg.weak_weight if seg.weak_label else (seg.mean_confidence or 0.0)
 
 
-def build_queue(session_dir: Path, cap: int = QUEUE_CAP, audit_fraction: float = AUDIT_FRACTION) -> list[ReviewItem]:
+def build_queue(session_dir: Path, cap: int = QUEUE_CAP, audit_fraction: float = AUDIT_FRACTION, decisions: bool = False) -> list[ReviewItem]:
+    """The human queue; with `decisions` the dashboard list: every tagged segment plus the
+    untagged fire / arm ones, ordered by t0, uncapped, bucket DECISION."""
     segments, cosmos, jev, tags, human = load_passes(session_dir)
     items: list[ReviewItem] = []
+    if decisions:
+        for seg in segments:
+            tag = tags.get(seg.segment_id)
+            if tag is not None:
+                reason = f"{tag.verdict.value} ({tag.confidence:.2f}): {tag.reason}"
+            elif seg.kind in (SegmentKind.FIRE, SegmentKind.ARM):
+                reason = NOT_JUDGED
+            else:
+                continue
+            item = ReviewItem(seg, cosmos.get(seg.segment_id), jev.get(seg.segment_id), tag, DECISION, reason)
+            item.value = _value(item)
+            items.append(item)
+        items.sort(key=lambda it: it.segment.t0)
+        return items
     for seg in segments:
         if seg.segment_id in human:
             continue
@@ -171,6 +194,24 @@ def build_queue(session_dir: Path, cap: int = QUEUE_CAP, audit_fraction: float =
         items.append(item)
     items.sort(key=lambda it: (it.bucket, -it.value, it.segment.t0))
     return items[:cap]
+
+
+def summarize(items: list[ReviewItem]) -> dict[str, Any]:
+    """Counts by verdict, how many were escalated to the stronger model, how many are not
+    judged yet, and which models answered."""
+    by_verdict: dict[str, int] = {}
+    models: dict[str, int] = {}
+    escalated = 0
+    unjudged = 0
+    for it in items:
+        if it.tag is None:
+            unjudged += 1
+            continue
+        by_verdict[it.tag.verdict.value] = by_verdict.get(it.tag.verdict.value, 0) + 1
+        models[it.tag.model or "?"] = models.get(it.tag.model or "?", 0) + 1
+        if ESCALATED_MARK in it.tag.reason:
+            escalated += 1
+    return {"total": len(items), "by_verdict": by_verdict, "escalated": escalated, "not_judged": unjudged, "models": models}
 
 
 # -- the server --------------------------------------------------------------------------
@@ -194,9 +235,11 @@ class ReviewServer:
     """Serves the queue of one session. `label` and `undo` are the two writes; the HTTP side
     is a thin JSON wrapper over them so the page and the tests share one path."""
 
-    def __init__(self, session_dir: Path, port: int = 8766, host: str = "127.0.0.1", cap: int = QUEUE_CAP) -> None:
+    def __init__(self, session_dir: Path, port: int = 8766, host: str = "127.0.0.1", cap: int = QUEUE_CAP, readonly: bool = False) -> None:
         self.session_dir = Path(session_dir)
-        self.queue = build_queue(self.session_dir, cap=cap)
+        self.readonly = readonly
+        self.queue = build_queue(self.session_dir, cap=cap, decisions=readonly)
+        self.summary = summarize(self.queue) if readonly else {}
         self.pos = 0
         self.history: list[tuple[int, HumanLabel]] = []  # (queue index, label) for undo
         self.done = 0
@@ -219,6 +262,9 @@ class ReviewServer:
             item = self.queue[self.pos] if 0 <= self.pos < total else None
             last = self.history[-1][1] if self.history else None
             return {
+                "readonly": self.readonly,
+                "summary": self.summary,
+                "title": "Decisions (read-only)" if self.readonly else "Intent review",
                 "index": self.pos,
                 "total": total,
                 "done": self.done,
@@ -240,6 +286,8 @@ class ReviewServer:
         }
 
     def label(self, segment_id: str, verdict: str, true_gesture: str | None = None, intent: str | None = None, motion: str | None = None, note: str = "", amend: bool = False) -> dict[str, Any]:
+        if self.readonly:
+            raise PermissionError("read-only: the decisions dashboard takes no labels")
         with self._lock:
             idx = next((i for i, it in enumerate(self.queue) if it.segment_id == segment_id), None)
             if idx is None:
@@ -272,6 +320,8 @@ class ReviewServer:
         return self.current()
 
     def undo(self) -> dict[str, Any]:
+        if self.readonly:
+            raise PermissionError("read-only: nothing to undo")
         with self._lock:
             if not self.history:
                 return self.current()
@@ -391,7 +441,8 @@ def _handler_for(srv: ReviewServer) -> type[BaseHTTPRequestHandler]:
         def do_GET(self) -> None:
             u = urlsplit(self.path)
             if u.path == "/":
-                self._send(200, PAGE.encode(), "text/html; charset=utf-8")
+                title = "Decisions (read-only)" if srv.readonly else "Intent review"
+                self._send(200, PAGE.replace("Intent review", title).encode(), "text/html; charset=utf-8")
             elif u.path == "/item":
                 q = parse_qs(u.query)
                 if "i" in q:
@@ -421,15 +472,21 @@ def _handler_for(srv: ReviewServer) -> type[BaseHTTPRequestHandler]:
                     self._json(srv.skip())
                 else:
                     self._send(404, b"not found", "text/plain")
+            except PermissionError as e:
+                self._json({"error": str(e)}, 403)
             except (KeyError, ValueError) as e:
                 self._json({"error": f"{type(e).__name__}: {e}"}, 400)
 
     return Handler
 
 
-def serve(session_dir: Path, port: int = 8766) -> int:
-    srv = ReviewServer(session_dir, port=port)
-    print(f"review {session_dir.name}: {len(srv.queue)} in the queue at {srv.url}  (q in the page or Ctrl-C here to stop)")
+def serve(session_dir: Path, port: int = 8766, decisions: bool = False) -> int:
+    srv = ReviewServer(session_dir, port=port, readonly=decisions)
+    if decisions:
+        sm = srv.summary
+        print(f"decisions {session_dir.name}: {sm['total']} moments, " + " ".join(f"{k}={v}" for k, v in sorted(sm["by_verdict"].items())) + f" escalated={sm['escalated']} not_judged={sm['not_judged']} at {srv.url} (read-only; Ctrl-C to stop)")
+    else:
+        print(f"review {session_dir.name}: {len(srv.queue)} in the queue at {srv.url}  (q in the page or Ctrl-C here to stop)")
     try:
         srv._thread.join()
     except KeyboardInterrupt:
@@ -461,6 +518,7 @@ table{width:100%;border-collapse:collapse}td{text-align:left;padding:3px 6px;bor
 .reason{color:var(--warn)}
 </style></head><body>
 <h1>Intent review <small id="prog"></small> <small id="reason" class="reason"></small></h1>
+<div id="summary" style="color:var(--quiet);margin:-6px 0 8px;display:none"></div>
 <div class="bar"><i id="bar"></i></div>
 <div class="grid">
  <div>
@@ -486,7 +544,9 @@ const $=id=>document.getElementById(id);let S=null,gmode=false,quit=false;
 const esc=s=>String(s??'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 function kv(el,obj){el.innerHTML=Object.entries(obj||{}).map(([k,v])=>`<tr><td>${esc(k)}</td><td>${esc(typeof v==='number'?+v.toFixed(3):(v===null?'—':(typeof v==='object'?JSON.stringify(v):v)))}</td></tr>`).join('')||'<tr><td colspan=2>—</td></tr>'}
 function toast(t){const e=$('toast');e.textContent=t;e.className='toast on';clearTimeout(e._t);e._t=setTimeout(()=>e.className='toast',1200)}
-function render(s){S=s;const it=s.item;$('prog').textContent=`${s.done} labelled · ${s.index+1 > s.total ? s.total : s.index+1} of ${s.total}`;
+function summary(s){const e=$('summary');if(!s.readonly||!s.summary){e.style.display='none';return}const m=s.summary;
+ e.style.display='block';e.innerHTML=`<b>${m.total}</b> decisions · `+Object.entries(m.by_verdict||{}).map(([k,v])=>`<span class="v-${k}">${v} ${k}</span>`).join(' · ')+` · <b>${m.escalated}</b> escalated to the stronger model · ${m.not_judged} not judged yet · models: ${esc(Object.entries(m.models||{}).map(([k,v])=>k+' ×'+v).join(', ')||'—')}`}
+function render(s){S=s;summary(s);const it=s.item;$('prog').textContent=`${s.done} labelled · ${s.index+1 > s.total ? s.total : s.index+1} of ${s.total}`;
  $('bar').style.width=(s.total?100*s.index/s.total:0)+'%';
  $('legend').innerHTML=Object.entries(s.legend).map(([k,v])=>`<span><b>g ${k}</b> ${v}</span>`).join('');
  $('last').textContent=s.last?`last: ${s.last.segment_id} → ${s.last.verdict}${s.last.true_gesture?' · '+s.last.true_gesture:''} (${s.last.intent})`:'';
@@ -506,6 +566,7 @@ async function get(){render(await (await fetch('/item')).json())}
 async function post(p,b){const r=await fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})});const j=await r.json();if(j.error)toast(j.error);else render(j)}
 const V={y:'intended',n:'misfire',m:'missed',x:'no_event',a:'ambiguous'};
 document.addEventListener('keydown',async e=>{if(quit||e.metaKey||e.ctrlKey||e.altKey)return;const k=e.key;
+ if(S&&S.readonly){if(k===' '||k==='ArrowRight'){e.preventDefault();await post('/skip')}else if(k==='ArrowLeft'){e.preventDefault();render(await (await fetch('/item?i='+Math.max(0,S.index-1))).json())}else if(k==='q'){quit=true;$('reason').textContent='quit — close the tab, Ctrl-C the server'}else if(k in V||k==='g'||k==='u')toast('read-only: decisions dashboard');return}
  if(gmode){gmode=false;if(S&&S.last&&(k in S.legend)){await post('/label',{segment_id:S.last.segment_id,verdict:S.last.verdict,true_gesture:S.legend[k]==='none'?null:S.legend[k],amend:true});toast('gesture: '+S.legend[k])}else toast('no gesture');return}
  if(k in V){if(S&&S.item){e.preventDefault();await post('/label',{segment_id:S.item.segment.segment_id,verdict:V[k]});toast(V[k])}}
  else if(k==='g'){gmode=true;toast('g: pick a gesture for the last answer')}
