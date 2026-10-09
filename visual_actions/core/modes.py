@@ -100,6 +100,8 @@ class Timing:
     repeat_slide: float = 0.10  # sideways wrist travel (fraction of frame width) that counts as a slide
     leader_min_confidence: float = 0.9  # palm tokens below this neither start nor fill the hold; FAST 0.8
     adjust_step: float = 0.05  # ADJUST: sideways pinch travel (fraction of frame width) per pinch_right / pinch_left
+    adjust_range_steps: int = 16  # ADJUST: steps from the anchor to the frame edge when the anchor is central (16 = the full volume range)
+    adjust_step_min: float = 0.02  # ADJUST: the step never shrinks under this when the anchor sits near an edge
     adjust_settle_ns: int = 250_000_000  # ADJUST: the pinch must hold still this long before travel counts (shape changes pinch briefly)
     adjust_settle_travel: float = 0.04  # ADJUST: pinch-point drift (frame fraction) that restarts the settle
     chain_commands: bool = True  # stay ARMED after a command (timeout restarts) so commands chain without the leader
@@ -176,6 +178,7 @@ class ModeEngine:
         self._adjust_since_ns = 0
         self._adjust_settle_xy = (0.5, 0.5)
         self._adjust_settled = False
+        self._adjust_step = 0.05
         self._refresh_on_return = False  # ARMED kept across a loss: the returning hand's leader shape renews the deadline
         self._slide_shape: str | None = None  # ARMED: the slide shape being tracked, and where its wrist was anchored
         self._slide_anchor = (0.5, 0.5)
@@ -453,12 +456,17 @@ class ModeEngine:
                 self._publish_adjust(AdjustPhase.SETTLE, ev.t_ns, ev.x, ev.y)
                 return
             self._adjust_settled = True
+            # The step scales to the room the anchor has: from the centre, the frame edge is the
+            # full volume range (adjust_range_steps steps); off-centre the step never drops under
+            # adjust_step_min, so a dot set near an edge simply covers less of the range.
+            room = min(ev.x, 1.0 - ev.x)
+            self._adjust_step = max(self.timing.adjust_step_min, min(self.timing.adjust_step, room / self.timing.adjust_range_steps))
             self._adjust_anchor_x, self._adjust_anchor_y = ev.x, ev.y
             self.bus.publish(ModeChanged(ev.t_ns, ADJUST, ADJUST, self.namespace, None))  # settled: the overlay says "move"
             self._publish_adjust(AdjustPhase.START, ev.t_ns, ev.x, ev.y)
             return
         ns = self.namespace or self.default_namespace
-        step = self.timing.adjust_step
+        step = self._adjust_step
         steps = 0
         while ev.x - self._adjust_anchor_x >= step:
             self._adjust_anchor_x += step

@@ -25,6 +25,8 @@ class TimingConfig:
     chain_commands: bool = True  # a menu stays open after each command (timeout restarts); fist or timeout closes it
     leader_release_tokens: int = 3  # after arming, the leader shape fires (if bound) only after this many other tokens in a row
     adjust_step: float = 0.05  # media pinch: sideways travel (fraction of frame width) per volume step
+    adjust_range_steps: int = 16  # media pinch: a centred anchor reaches the full volume range at the frame edge
+    adjust_step_min: float = 0.02  # media pinch: the step never shrinks under this near an edge
     adjust_settle_s: float = 0.25  # media pinch: hold the pinch still this long before movement changes the volume
     adjust_settle_travel: float = 0.04  # media pinch: drift during the settle that restarts it
     hold_break_tokens: int = 1  # any non-palm token abandons the hold (strict: the palm must be continuous)
@@ -54,6 +56,8 @@ class TimingConfig:
             leader_release_tokens=self.leader_release_tokens,
             chain_commands=self.chain_commands,
             adjust_step=self.adjust_step,
+            adjust_range_steps=self.adjust_range_steps,
+            adjust_step_min=self.adjust_step_min,
             adjust_settle_ns=int(self.adjust_settle_s * s),
             adjust_settle_travel=self.adjust_settle_travel,
             drag_lost_grace_ns=int(self.drag_lost_grace_s * s),
