@@ -12,7 +12,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from .schema import Segment, SegmentKind, read_jsonl, write_jsonl
+from .schema import Segment, SegmentKind, by_id, read_jsonl, write_jsonl
 
 if TYPE_CHECKING:
     from . import jev
@@ -191,6 +191,78 @@ def cmd_lf_accuracy(args: argparse.Namespace) -> int:
     return 0
 
 
+def _embed_sessions(args_sessions: list[str]) -> list[Path]:
+    from ..paths import sessions_dir
+    from .embed import embeddings_path
+
+    dirs = [resolve_session(s) for s in args_sessions] or sorted(p.parent.parent for p in sessions_dir().glob("*/intent/embeddings.jsonl"))
+    if not dirs:
+        raise SystemExit("no session has an intent/embeddings.jsonl: run `embed` first")
+    missing = [d for d in dirs if not embeddings_path(d).exists()]
+    if missing:
+        raise SystemExit(f"no embeddings.jsonl in {[str(d) for d in missing]}: run `embed` first")
+    return dirs
+
+
+def cmd_embed(args: argparse.Namespace) -> int:
+    from . import embed
+
+    session = resolve_session(args.session)
+    kinds = _kinds(args.kinds)
+    segments_path = session / "intent" / "segments.jsonl"
+    if not segments_path.exists():
+        raise SystemExit(f"{segments_path} is missing: run `segments` first")
+    client = embed.Embed1Client(max_calls=args.max_calls)
+    if not client.api_key:
+        raise SystemExit("NVIDIA_API_KEY is not set")
+    out = embed.embeddings_path(session)
+    print(f"client: {client.url} model={client.model}")
+    vecs = embed.run_embed(session, segments_path, out, client, kinds=kinds, limit=args.limit, log=print)
+    print(f"{out}: {len(vecs)} new embeddings ({client.calls} calls)")
+    return 0
+
+
+def _print_hits(hits: list[tuple[str, float]], dirs: list[Path]) -> None:
+    from .schema import CosmosVerdict
+
+    seen: dict[str, CosmosVerdict] = {}
+    for d in dirs:
+        seen.update(by_id(read_jsonl(d / "intent" / "cosmos.jsonl", CosmosVerdict)))
+    for sid, cos in hits:
+        v = seen.get(sid)
+        desc = f" {v.intent.value} {v.motion.value}: {v.hand_description[:90]}" if v else ""
+        print(f"{cos:.3f} {sid}{desc}")
+
+
+def cmd_similar(args: argparse.Namespace) -> int:
+    from . import embed
+
+    if bool(args.query) == bool(args.like):
+        raise SystemExit("give exactly one of --query or --like")
+    dirs = _embed_sessions(args.sessions)
+    client = None
+    if args.query:
+        client = embed.Embed1Client(max_calls=1)
+        if not client.api_key:
+            raise SystemExit("NVIDIA_API_KEY is not set")
+    hits = embed.similar(dirs, query_text=args.query, like_segment_id=args.like, k=args.k, client=client)
+    print(f"{len(hits)} nearest of {sum(1 for d in dirs for _ in read_jsonl(embed.embeddings_path(d), embed.Embedding))} embedded segments in {len(dirs)} sessions")
+    _print_hits(hits, dirs)
+    return 0
+
+
+def cmd_propagate(args: argparse.Namespace) -> int:
+    from . import embed
+
+    dirs = _embed_sessions(args.sessions)
+    tags = embed.propagate(dirs, min_cos=args.min_cos, max_per_seed=args.max_per_seed, log=print)
+    counts: dict[str, int] = {}
+    for t in tags:
+        counts[t.verdict.value] = counts.get(t.verdict.value, 0) + 1
+    print(f"{len(tags)} propagated tags across {len(dirs)} sessions (min cosine {args.min_cos}) " + " ".join(f"{k}={v}" for k, v in sorted(counts.items())))
+    return 0
+
+
 COMMANDS: dict[str, Callable[[argparse.Namespace], int]] = {
     "segments": cmd_segments,
     "clips": cmd_clips,
@@ -200,6 +272,9 @@ COMMANDS: dict[str, Callable[[argparse.Namespace], int]] = {
     "review": cmd_review,
     "export": cmd_export,
     "lf-accuracy": cmd_lf_accuracy,
+    "embed": cmd_embed,
+    "similar": cmd_similar,
+    "propagate": cmd_propagate,
 }
 
 
@@ -253,6 +328,23 @@ def build_parser() -> argparse.ArgumentParser:
 
     a = sub.add_parser("lf-accuracy", help="precision / recall / coverage of each labelling function against human labels")
     a.add_argument("sessions", nargs="*", help="default: every session with a human.jsonl")
+
+    m = sub.add_parser("embed", help="pass 1b: Cosmos Embed1 embeds each segment's clip -> intent/embeddings.jsonl")
+    m.add_argument("session")
+    m.add_argument("--kinds")
+    m.add_argument("--limit", type=int)
+    m.add_argument("--max-calls", type=int, default=500, help="spend cap for this run")
+
+    q = sub.add_parser("similar", help="the nearest embedded segments to a text query or to one segment, across sessions")
+    q.add_argument("--query", help="free text, embedded with Cosmos Embed1")
+    q.add_argument("--like", help="a segment id whose stored vector is the query")
+    q.add_argument("--k", type=int, default=10)
+    q.add_argument("sessions", nargs="*", help="default: every session with an embeddings.jsonl")
+
+    g = sub.add_parser("propagate", help="copy confident tags to untagged look-alikes above a cosine threshold -> intent/tags.jsonl (append)")
+    g.add_argument("--min-cos", type=float, default=0.9)
+    g.add_argument("--max-per-seed", type=int, default=20)
+    g.add_argument("sessions", nargs="*", help="default: every session with an embeddings.jsonl")
     return p
 
 
